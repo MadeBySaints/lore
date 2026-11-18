@@ -234,7 +234,9 @@ QJsonArray Store::search(const QString &query, int limit, bool anyTerms) const {
     q.addBindValue(words.join(anyTerms ? " OR " : " AND "));
   }
   q.addBindValue(qBound(1, limit, 200)); execute(q);
-  while (q.next()) results.append(QJsonObject{{"id", q.value(0).toString()}, {"role", q.value(1).toString()}, {"body", q.value(2).toString()}, {"source", q.value(3).toString()}, {"time", q.value(4).toString()}, {"provider", q.value(5).toString()}, {"title", q.value(6).toString()}});
+  QSet<QString> outdated;
+  for(const auto &v:memories()) { const auto o=v.toObject(); if(o.value("review").toString()=="outdated") for(const auto &ref:o.value("refs").toArray()) outdated.insert(ref.toString()); }
+  while (q.next()) if(!outdated.contains(q.value(0).toString())) results.append(QJsonObject{{"id", q.value(0).toString()}, {"role", q.value(1).toString()}, {"body", q.value(2).toString()}, {"source", q.value(3).toString()}, {"time", q.value(4).toString()}, {"provider", q.value(5).toString()}, {"title", q.value(6).toString()}});
   return results;
 }
 QJsonArray Store::session(const QString &id, int offset, int limit) const {

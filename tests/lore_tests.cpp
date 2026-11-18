@@ -319,7 +319,10 @@ private slots:
     Store::write(path,claude(p.path(),"user","Use SQLite for the database.")+claude(p.path(),"user","We might use PostgreSQL instead.")); store.ingest(path,"claude"); batch=store.learningBatch().value("events").toArray();
     auto changed=entry(batch.first().toObject().value("id").toString()); auto e=changed["entries"].toArray().first().toObject(); e["body"]="Use PostgreSQL for storage."; changed["entries"]=QJsonArray{e}; store.learn(changed,batch,"fake");
     QVERIFY(!store.memories().first().toObject().value("conflicts").toArray().isEmpty());
-    store.reviewMemory(2,"outdated"); store.reviewMemory(1,"corrected","Use SQLite for the database. PostgreSQL was only a proposal.");
+    store.reviewMemory(2,"outdated");
+    for(const auto &v:store.evidence()) if(v.toObject().value("type").toString()=="conversation") QVERIFY(!v.toObject().value("body").toString().contains("We might use PostgreSQL"));
+    QVERIFY(store.search("PostgreSQL").isEmpty());
+    store.reviewMemory(1,"corrected","Use SQLite for the database. PostgreSQL was only a proposal.");
     const auto corrected=store.memories().first().toObject(); QCOMPARE(corrected.value("review").toString(),QString("corrected"));
     const auto recall=store.briefing("database",3,false).value("evidence").toArray(); QCOMPARE(recall.first().toObject().value("id").toString(),QString("memory:3"));
     QVERIFY(store.memories()[2].toObject().value("supersededBy").toInt()==3);
