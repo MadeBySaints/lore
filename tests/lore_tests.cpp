@@ -296,7 +296,14 @@ private slots:
     const auto command = Toolbox::resolve("claude",wrapper);
     QVERIFY(command.available()); QCOMPARE(command.arguments,QStringList{script});
     QProcess process; process.start(command.program,command.arguments + QStringList{"auth","status","--json"});
-    QVERIFY(process.waitForFinished(5000)); QCOMPARE(process.exitCode(),0);
+    process.closeWriteChannel();
+    QVERIFY2(process.waitForStarted(10000),qPrintable(process.errorString()));
+    // Allow the runner's first Node launch to finish security scanning. Match
+    // the app's closed input channel so a provider cannot wait for stdin.
+    const bool finished = process.waitForFinished(30000);
+    const QString diagnostic = process.errorString() + "\n" + process.readAllStandardError();
+    if (!finished) { process.kill(); process.waitForFinished(); }
+    QVERIFY2(finished,qPrintable(diagnostic)); QCOMPARE(process.exitCode(),0);
     QVERIFY(QJsonDocument::fromJson(process.readAllStandardOutput()).object().value("loggedIn").toBool());
 #endif
   }
