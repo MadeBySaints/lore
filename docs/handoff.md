@@ -72,7 +72,9 @@ PowerShell scripts build, test, and package a Windows executable with Qt runtime
 dependencies. `.github/workflows/windows.yml` runs the native Qt and CLI suites,
 then tests a packaged executable with Qt SDK paths removed. The provider fixtures
 are native executables and the MCP pipe test is portable across both platforms.
-Windows builds enable console output so headless hooks can return JSON.
+Windows builds enable console output so headless hooks can return JSON. Packaging
+explicitly includes qoffscreen.dll, which headless commands need in addition to
+the GUI platform plugin selected automatically by windeployqt.
 
 Live authentication and actual Windows Claude/Codex CLI distributions still
 require validation on a Windows machine. In particular, learning must account

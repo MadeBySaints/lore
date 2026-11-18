@@ -38,6 +38,7 @@ jobs:
         shell: pwsh
         run: .\bin\package-windows.ps1
       - name: Test packaged hooks without the Qt SDK on PATH
+        timeout-minutes: 3
         shell: pwsh
         run: .\tests\windows-smoke.ps1
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
