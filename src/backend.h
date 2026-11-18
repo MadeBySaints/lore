@@ -75,6 +75,7 @@ public:
   Q_INVOKABLE void updateSemantic(bool download = false);
   Q_INVOKABLE void disableSemantic();
   Q_INVOKABLE void installSemanticRuntime();
+  Q_INVOKABLE void openReleases();
   Q_INVOKABLE void ask(const QString &question);
   Q_INVOKABLE void previewContext(const QString &query);
   Q_INVOKABLE void reviewMemory(int id, const QString &action, const QString &correction = {});

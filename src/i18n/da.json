@@ -274,5 +274,7 @@
   "Indexed %1 project files; skipped %2 excluded, binary, or oversized files.": "Indekserede %1 projektfiler; sprang %2 udeladte, binære eller for store filer over.",
   "Updated %1 local embeddings; %2 evidence excerpts indexed.": "Opdaterede %1 lokale embeddings; %2 kildeuddrag indekseret.",
   "Answered with %1 cited evidence excerpts.": "Besvarede med %1 kildeuddrag.",
-  "Reviewed memory %1.": "Gennemgik note %1."
+  "Reviewed memory %1.": "Gennemgik note %1.",
+  "Check for updates": "Søg efter opdateringer",
+  "Could not open your browser. Visit https://github.com/MadeBySaints/lore/releases to check for updates.": "Kunne ikke åbne din browser. Besøg https://github.com/MadeBySaints/lore/releases for at se opdateringer."
 }

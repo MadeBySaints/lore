@@ -340,6 +340,10 @@ void Backend::indexProject() { work("index"); }
 void Backend::updateSemantic(bool download) { work(download?"download":"semantic"); }
 void Backend::disableSemantic() { if(!m_store || busy()) return; try { m_store->setSemanticEnabled(false); refresh(); message(tr("Semantic search disabled. Keyword search remains available.")); } catch(const std::exception &e) { message(QString::fromUtf8(e.what()),true); } }
 void Backend::installSemanticRuntime() { QDesktopServices::openUrl(QUrl("https://ollama.com/download")); message(tr("Install and open Ollama, then choose Download model & enable. Embeddings stay on this computer.")); }
+void Backend::openReleases() {
+  if (!QDesktopServices::openUrl(QUrl("https://github.com/MadeBySaints/lore/releases")))
+    message(tr("Could not open your browser. Visit https://github.com/MadeBySaints/lore/releases to check for updates."),true);
+}
 void Backend::ask(const QString &question) { if(question.trimmed().isEmpty()) return; if(!m_tools.ready(m_learningProvider)) { message(tr("Sign in to your selected coding tool in Connections before asking."),true); return; } m_answer.clear(); emit changed(); work("ask",question.trimmed().left(4000)); }
 void Backend::previewContext(const QString &query) { work("preview",query); }
 void Backend::reviewMemory(int id,const QString &action,const QString &correction) { if(!m_store || busy() || capturing()) return; try { m_store->reviewMemory(id,action,correction); m_answer.clear(); m_preview.clear(); refresh(); if(m_semantic.value("enabled").toBool()) QTimer::singleShot(0,this,[this] { updateSemantic(false); }); message(tr("Memory review saved.")); } catch(const std::exception &e) { message(QString::fromUtf8(e.what()),true); } }

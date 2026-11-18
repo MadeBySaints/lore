@@ -343,11 +343,12 @@ ApplicationWindow {
     }
     Rectangle { visible: win.helpVisible; anchors.fill: parent; color: "#ed101411"
       MouseArea { anchors.fill: parent; onClicked: win.helpVisible = false }
-      Rectangle { anchors.centerIn: parent; width: Math.min(530, win.width - 60); height: 380; color: "#1c271d"; border.color: win.edge; radius: theme.radius
+      Rectangle { anchors.centerIn: parent; width: Math.min(530, win.width - 60); height: 440; color: "#1c271d"; border.color: win.edge; radius: theme.radius
         Column { anchors.fill: parent; anchors.margins: 28; spacing: 20
           Label { text: qsTr("Help & shortcuts"); color: win.ink; font.pixelSize: 24 }
           Label { text: qsTr("Choose a folder, check your tools, and connect. Use Start Claude Code or Start Codex to begin a session in the right project."); color: win.muted; width: parent.width; wrapMode: Text.Wrap }
           Label { text: qsTr("Ctrl+O   Choose project folder\nCtrl+K   Search memory\nSpace    Capture now\nF11      Toggle full screen\nEscape   Close page or help\n?        Show this help\nQ        Quit"); color: win.ink; font.family: "monospace"; font.pixelSize: 13; lineHeight: 1.5 }
+          PrimaryButton { objectName: "checkUpdatesButton"; text: qsTr("Check for updates"); onClicked: backend.openReleases() }
         }
       }
     }

@@ -4,6 +4,7 @@
 #include "translator.h"
 #include "paths.h"
 #include <QDir>
+#include <QDesktopServices>
 #include <QFile>
 #include <QJsonDocument>
 #include <QQmlApplicationEngine>
@@ -30,6 +31,12 @@ static QByteArray claude(const QString &root, const QString &role, const QString
 static QJsonObject entry(const QString &ref) {
   return {{"entries",QJsonArray{QJsonObject{{"title","Database choice"},{"kind","decision"},{"body","Use SQLite for local storage."},{"refs",QJsonArray{ref}}}}}};
 }
+class ReleaseUrlRecorder : public QObject {
+  Q_OBJECT
+public:
+  QUrl opened;
+  Q_INVOKABLE void record(const QUrl &url) { opened=url; }
+};
 class FakePicker : public FilePicker {
 public:
   bool opened = false;
@@ -469,6 +476,13 @@ private slots:
     QCOMPARE(window->property("page").toInt(),3);
     for (const auto key : {Qt::Key_S,Qt::Key_Q,Qt::Key_L}) QTest::keyClick(window,key);
     QTest::keyClick(window,Qt::Key_Escape); QVERIFY(!window->property("helpVisible").toBool());
+    ReleaseUrlRecorder releases;
+    QDesktopServices::setUrlHandler("https",&releases,"record");
+    const auto restoreBrowser=qScopeGuard([] { QDesktopServices::unsetUrlHandler("https"); });
+    window->setProperty("helpVisible",true);
+    QTest::qWait(50); window->grabWindow().save(QCoreApplication::applicationDirPath()+"/updates-help.png");
+    QVERIFY(click("checkUpdatesButton")); QCOMPARE(releases.opened,QUrl("https://github.com/MadeBySaints/lore/releases"));
+    window->setProperty("helpVisible",false);
     QVERIFY(click("nav6")); QCOMPARE(window->property("page").toInt(),6);
     auto *question=window->findChild<QQuickItem *>("askQuestion"); QVERIFY(question); question->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Q); QVERIFY(window->isVisible());
     QVERIFY(click("nav8")); QCOMPARE(window->property("page").toInt(),8);
