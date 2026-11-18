@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+if [ ! -x "$ROOT/build/lore" ]; then "$ROOT/bin/build"; fi
+LORE_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}"
+LORE_BINARY="$HOME/.local/bin/lore"
+install -Dm755 "$ROOT/build/lore" "$LORE_BINARY"
+install -Dm644 "$ROOT/pkgbuild/lore.svg" "$LORE_DATA_DIR/icons/hicolor/scalable/apps/lore.svg"
+install -Dm644 "$ROOT/LICENSE" "$LORE_DATA_DIR/licenses/lore/LICENSE"
+mkdir -p "$LORE_DATA_DIR/applications"
+# Desktop entries have their own quoting rules. Escape the path for the Exec
+# field rather than relying on the launcher's PATH.
+LORE_EXEC="$(printf '%s' "$LORE_BINARY" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g; s/%/%%/g')"
+while IFS= read -r line; do
+  case "$line" in
+    Exec=*) printf 'Exec="%s" open\n' "$LORE_EXEC" ;;
+    *) printf '%s\n' "$line" ;;
+  esac
+done < "$ROOT/pkgbuild/lore.desktop" > "$LORE_DATA_DIR/applications/lore.desktop"
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$LORE_DATA_DIR/applications"
+fi
+printf 'Installed Lore for your user: %s\n' "$LORE_BINARY"
