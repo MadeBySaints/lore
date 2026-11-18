@@ -37,7 +37,7 @@ static int mcp(Store &store) {
     const QString method = req.value("method").toString(); QJsonObject response{{"jsonrpc","2.0"},{"id",req.value("id")}};
     try {
       QJsonObject result;
-      if (method == "initialize") result = {{"protocolVersion","2024-11-05"},{"capabilities",QJsonObject{{"tools",QJsonObject()}}},{"serverInfo",QJsonObject{{"name","lore"},{"version","0.1.0"}}}};
+      if (method == "initialize") result = {{"protocolVersion","2024-11-05"},{"capabilities",QJsonObject{{"tools",QJsonObject()}}},{"serverInfo",QJsonObject{{"name","lore"},{"version",QCoreApplication::applicationVersion()}}}};
       else if (method == "ping") result = {};
       else if (method == "tools/list") result = {{"tools",QJsonArray{
         mcpTool("brain_context","Read the project's entry point and memory status."),

@@ -39,6 +39,8 @@ try {
   Run-Checked -Executable (Join-Path $destination 'lore.exe') -Arguments @('init', '--project', $project, '--json')
   Run-Checked -Executable (Join-Path $destination 'unins000.exe') -Arguments @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
   for ($retry = 0; $retry -lt 40 -and (Test-Path (Join-Path $destination 'lore.exe')); $retry++) { Start-Sleep -Milliseconds 250 }
+  if (Test-Path (Join-Path $destination 'lore.exe')) { throw 'Uninstall did not remove the app' }
+  if (Test-Path $shortcut) { throw 'Uninstall did not remove the Start menu shortcut' }
   if (!(Test-Path (Join-Path $project '.lore/brain.sqlite'))) { throw 'Uninstall removed project memory' }
 } finally {
   foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $old[$name], 'Process') }
