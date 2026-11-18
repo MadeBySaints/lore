@@ -8,7 +8,7 @@ $setup = Join-Path $root 'build/installer/Lore-Setup-0.2.0.exe'
 $evidence = Join-Path $root 'build/install-check'
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 $old = @{}
-$names = @('LORE_PREFERENCES_FILE', 'LORE_SKIP_TOOL_CHECKS', 'QT_QPA_PLATFORM', 'QT_QUICK_BACKEND')
+$names = @('LORE_PREFERENCES_FILE', 'LORE_SKIP_TOOL_CHECKS', 'QT_QPA_PLATFORM', 'QT_QUICK_BACKEND', 'PATH', 'QT_PLUGIN_PATH', 'QML_IMPORT_PATH', 'QML2_IMPORT_PATH')
 foreach ($name in $names) { $old[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 function Run-Checked {
   param([string]$Executable, [string[]]$Arguments)
@@ -36,6 +36,11 @@ try {
   # offscreen plugin used by headless hooks and unit tests.
   $env:QT_QPA_PLATFORM = 'windows'
   $env:QT_QUICK_BACKEND = 'software'
+  # Verify the installed app using only its own DLLs, plugins, and QML modules.
+  $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+  $env:QT_PLUGIN_PATH = $null
+  $env:QML_IMPORT_PATH = $null
+  $env:QML2_IMPORT_PATH = $null
   Run-Checked -Executable (Join-Path $destination 'lore-desktop.exe') -Arguments @('--screenshot', $image)
   for ($retry = 0; $retry -lt 40 -and !(Test-Path $image); $retry++) { Start-Sleep -Milliseconds 250 }
   if (!(Test-Path $image)) { throw 'Installed app did not render its setup screen' }
