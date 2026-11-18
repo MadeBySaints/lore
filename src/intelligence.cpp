@@ -206,10 +206,15 @@ QJsonArray Store::evidence() const {
     auto d=document("memory:"+QString::number(o.value("id").toInt()),"memory",o.value("title").toString(),o.value("body").toString(),".lore/wiki/"+QString::number(o.value("id").toInt())+".md");
     d["origin"]=o.value("origin"); d["review"]=state; d["stale"]=o.value("stale"); d["conflicts"]=o.value("conflicts"); d["kind"]=o.value("kind"); d["refs"]=o.value("refs"); result.append(d);
   }
-  QHash<QString,QString> corrections;
-  for(const auto &v:memories()) { const auto o=v.toObject(); if(o.value("review").toString()=="corrected" && !o.value("excluded").toBool() && !o.value("supersededBy").toInt()) for(const auto &ref:o.value("refs").toArray()) corrections[ref.toString()]=o.value("body").toString(); }
+  QHash<QString,QString> corrections; QSet<QString> outdated;
+  for(const auto &v:memories()) {
+    const auto o=v.toObject();
+    if(o.value("review").toString()=="outdated") for(const auto &ref:o.value("refs").toArray()) outdated.insert(ref.toString());
+    if(o.value("review").toString()=="corrected" && !o.value("excluded").toBool() && !o.value("supersededBy").toInt()) for(const auto &ref:o.value("refs").toArray()) corrections[ref.toString()]=o.value("body").toString();
+  }
   QSqlQuery events(m_db); events.prepare("SELECT e.id,e.body,s.title,e.source,e.role FROM events e JOIN sources s ON s.id=e.source WHERE e.id NOT IN (SELECT id FROM forgotten_events) ORDER BY e.seq DESC"); run(events);
   while(events.next()) {
+    if(outdated.contains(events.value(0).toString()) && !corrections.contains(events.value(0).toString())) continue;
     const QString body=events.value(1).toString();
     for(int start=0;start<body.size();start+=1400) {
       const QString id="event:"+events.value(0).toString()+":"+QString::number(start);
