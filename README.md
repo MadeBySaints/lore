@@ -73,7 +73,7 @@ Use **Help & shortcuts → Check for updates** to open the GitHub releases page.
 ## Install on Windows
 
 1. Open the [latest release](https://github.com/MadeBySaints/lore/releases/latest)
-   and download **Lore-Setup-0.3.1.exe**.
+   and download **Lore-Setup-0.3.2.exe**.
 2. Run the installer, then open **Lore** from the Start menu. The installer
    includes Qt and Microsoft runtime dependencies and installs for your user.
 3. Choose **Choose folder**, select your project, and review **Check tools**.

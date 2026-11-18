@@ -1,5 +1,5 @@
 pkgname=lore
-pkgver=0.3.1
+pkgver=0.3.2
 pkgrel=1
 pkgdesc='Project memory, conversation archive, and wiki for Claude Code and Codex'
 arch=('x86_64' 'aarch64')

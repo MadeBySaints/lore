@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
   }
   if (command != "open" || informational) { qputenv("QT_QPA_PLATFORM", "offscreen"); qputenv("QT_QPA_PLATFORMTHEME", "generic"); }
   QGuiApplication app(argc, argv);
-  app.setApplicationName("lore"); app.setApplicationVersion("0.3.1"); app.setDesktopFileName("lore");
+  app.setApplicationName("lore"); app.setApplicationVersion("0.3.2"); app.setDesktopFileName("lore");
   app.setWindowIcon(QIcon(":/lore.svg"));
 #ifdef Q_OS_WIN
   SetCurrentProcessExplicitAppUserModelID(L"MadeBySaints.Lore");
