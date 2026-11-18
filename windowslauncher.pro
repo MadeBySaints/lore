@@ -5,5 +5,5 @@ CONFIG -= qt console debug_and_release
 DEFINES += UNICODE _UNICODE
 win32-msvc*: QMAKE_CXXFLAGS += /utf-8
 SOURCES += src/windowslauncher.cpp
-LIBS += -lshell32 -lole32 -luuid
+LIBS += -luser32 -lshell32 -lole32 -luuid
 RC_ICONS = pkgbuild/lore.ico
