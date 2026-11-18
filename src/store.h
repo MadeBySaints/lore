@@ -28,6 +28,7 @@ public:
   void render();
   static void write(const QString &path, const QByteArray &data);
   static QString read(const QString &path);
+  static QJsonObject claudeHook(const QString &binary, const QString &project);
 private:
   QSqlDatabase m_db;
   QString m_root, m_connection;

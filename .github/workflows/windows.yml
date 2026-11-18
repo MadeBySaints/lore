@@ -1,0 +1,48 @@
+name: Windows hooks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+      - uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+      - name: Build
+        shell: pwsh
+        run: .\bin\build.ps1
+      - name: Qt regression tests
+        shell: pwsh
+        run: .\bin\test.ps1
+      - name: CLI and hook integration tests
+        shell: pwsh
+        run: python tests/integration.py
+      - name: Bundle Qt runtime
+        shell: pwsh
+        run: .\bin\package-windows.ps1
+      - name: Test packaged hooks without the Qt SDK on PATH
+        shell: pwsh
+        run: .\tests\windows-smoke.ps1
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: lore-windows-x64
+          path: build/windows/
+          if-no-files-found: error
+          retention-days: 14

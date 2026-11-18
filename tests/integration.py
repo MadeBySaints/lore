@@ -2,13 +2,17 @@
 import json
 import os
 from pathlib import Path
-import select
+import queue
+import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-BINARY = ROOT / 'build/lore'
+SUFFIX = '.exe' if os.name == 'nt' else ''
+BINARY = ROOT / f'build/lore{SUFFIX}'
+PROVIDER_FIXTURE = ROOT / f'build/tests/lore_tests{SUFFIX}'
 
 
 class IntegrationTests(unittest.TestCase):
@@ -16,7 +20,7 @@ class IntegrationTests(unittest.TestCase):
         self.scratch = tempfile.TemporaryDirectory(prefix='lore-test-')
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
-        self.project = self.root / "atlas ' project"
+        self.project = self.root / "atlas ' & $ mémoire (project)"
         self.project.mkdir()
         self.env = dict(os.environ, QT_QPA_PLATFORM='offscreen',
                         QT_QPA_PLATFORMTHEME='generic', QT_QUICK_BACKEND='software',
@@ -28,11 +32,11 @@ class IntegrationTests(unittest.TestCase):
                              message=dict(role=role, content=[dict(type='text', text=text)]))
                         for role, text in [('user', 'Choose SQLite for local storage.'),
                                            ('assistant', 'Agreed. Next build the full text index.')]]
-        self.transcript.write_text(''.join(json.dumps(r) + '\n' for r in self.records))
+        self.transcript.write_text(''.join(json.dumps(r) + '\n' for r in self.records), encoding='utf-8')
 
     def run_cli(self, *args, input=None, success=True):
         result = subprocess.run([str(BINARY), *args, '--project', str(self.project), '--json'],
-                                input=input, text=True, capture_output=True,
+                                input=input, text=True, encoding='utf-8', capture_output=True,
                                 timeout=15, env=self.env)
         if success:
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -49,23 +53,51 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('lore', result.stdout.lower())
 
-    def test_bootstrap_preserves_existing_files_and_executes_quoted_hook(self):
+    def test_bootstrap_preserves_existing_files_and_executes_hooks(self):
         agents = self.project / 'AGENTS.md'
-        agents.write_text('# Project rules\nKeep the existing rules.\n')
+        agents.write_text('# Project rules\nKeep the existing rules.\n', encoding='utf-8')
         self.run_cli('connect')
-        settings = json.loads((self.project / '.claude/settings.local.json').read_text())
-        command = settings['hooks']['SessionStart'][0]['hooks'][0]['command']
+        settings = json.loads((self.project / '.claude/settings.local.json').read_text(encoding='utf-8'))
+        hook = settings['hooks']['SessionStart'][0]['hooks'][0]
+        self.assertTrue(Path(hook['command']).samefile(BINARY))
+        self.assertEqual(hook['args'][:2], ['hook', '--project'])
+        self.assertTrue(Path(hook['args'][2]).samefile(self.project))
+        self.assertNotIn('shell', hook)
         payload = dict(hook_event_name='SessionStart', transcript_path=str(self.transcript),
                        cwd=str(self.project))
-        result = subprocess.run(['/bin/sh', '-c', command], input=json.dumps(payload),
-                                text=True, capture_output=True, env=self.env, timeout=15)
+        result = subprocess.run([hook['command'], *hook['args']], input=json.dumps(payload),
+                                text=True, encoding='utf-8', capture_output=True, env=self.env, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         response = json.loads(result.stdout)
         self.assertIn('Read this first', response['hookSpecificOutput']['additionalContext'])
-        self.assertIn('Keep the existing rules.', agents.read_text())
+        self.assertIn('Keep the existing rules.', agents.read_text(encoding='utf-8'))
         payload.update(hook_event_name='UserPromptSubmit', prompt='Can you fix the SQLite problem?')
         result = self.run_cli('hook', input=json.dumps(payload))
         self.assertIn('Choose SQLite', json.loads(result.stdout)['hookSpecificOutput']['additionalContext'])
+        for event in ['Stop', 'PreCompact', 'SessionEnd']:
+            hook = settings['hooks'][event][0]['hooks'][0]
+            payload['hook_event_name'] = event
+            result = subprocess.run([hook['command'], *hook['args']], input=json.dumps(payload),
+                                    text=True, encoding='utf-8', capture_output=True, env=self.env, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, '')
+        self.assertEqual(json.loads(self.run_cli('status').stdout)['events'], 2)
+
+    def test_exec_hook_accepts_executable_paths_with_special_characters(self):
+        folder = self.root / "Lore's & $ tools (mémoire)"
+        folder.mkdir()
+        binary = folder / f'lore{SUFFIX}'
+        shutil.copy2(BINARY, binary)
+        result = subprocess.run([str(binary), 'connect', '--project', str(self.project), '--json'],
+                                env=self.env, text=True, encoding='utf-8', capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        hook = json.loads((self.project / '.claude/settings.local.json').read_text(encoding='utf-8'))['hooks']['SessionStart'][0]['hooks'][0]
+        result = subprocess.run([hook['command'], *hook['args']],
+                                input=json.dumps(dict(hook_event_name='SessionStart',
+                                                      transcript_path=str(self.transcript))),
+                                env=self.env, text=True, encoding='utf-8', capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Read this first', json.loads(result.stdout)['hookSpecificOutput']['additionalContext'])
 
     def test_idempotent_import_and_model_failure_leave_pending_messages(self):
         self.assertEqual(json.loads(self.capture().stdout)['added'], 2)
@@ -83,21 +115,13 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(status['memories'], 0)
 
     def fake_provider(self, provider, invalid=False):
-        executable = self.root / provider
-        executable.write_text('''#!/usr/bin/python3
-import sys,json
-prompt=sys.stdin.read()
-events=json.loads(prompt.split('NEW EVENTS:\\n',1)[1])
-ref='invented' if INVALID else events[0]['id']
-result={'entries':[{'title':'Local storage','kind':'decision','body':'Use SQLite.', 'refs':[ref]}]}
-if PROVIDER == 'codex':
-    assert '--ephemeral' in sys.argv and '--sandbox' in sys.argv
-    print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(result)}}))
-else:
-    assert '--no-session-persistence' in sys.argv and '--strict-mcp-config' in sys.argv
-    print(json.dumps({'result':json.dumps(result),'is_error':False}))
-'''.replace('INVALID', repr(invalid)).replace('PROVIDER', repr(provider)))
+        executable = self.root / f'{provider}{SUFFIX}'
+        shutil.copy2(PROVIDER_FIXTURE, executable)
         executable.chmod(0o700)
+        if invalid:
+            self.env['LORE_TEST_INVALID_REFS'] = '1'
+        else:
+            self.env.pop('LORE_TEST_INVALID_REFS', None)
         self.env['PATH'] = str(self.root) + os.pathsep + os.environ['PATH']
 
     def test_both_provider_response_formats_build_referenced_wiki(self):
@@ -111,7 +135,7 @@ else:
                 self.assertEqual(status['pending'], 0)
                 wiki = list((self.project / '.lore/wiki').glob('[0-9]*.md'))
                 self.assertTrue(wiki)
-                self.assertIn('.md#', wiki[-1].read_text())
+                self.assertIn('.md#', wiki[-1].read_text(encoding='utf-8'))
                 # Add another real record so the second provider has work.
                 with self.transcript.open('a') as f:
                     f.write(json.dumps(dict(self.records[0], timestamp=f'new-{provider}')) + '\n')
@@ -121,7 +145,14 @@ else:
         self.capture()
         process = subprocess.Popen([str(BINARY), 'mcp', '--project', str(self.project)],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True, env=self.env)
+                                   stderr=subprocess.PIPE, text=True, encoding='utf-8', env=self.env)
+        replies = queue.Queue()
+        def read_responses():
+            for line in process.stdout:
+                replies.put(line)
+            replies.put(None)
+        reader = threading.Thread(target=read_responses, daemon=True)
+        reader.start()
         def cleanup():
             process.stdin.close()
             try:
@@ -129,6 +160,7 @@ else:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+            reader.join(timeout=3)
             process.stdout.close()
             process.stderr.close()
         self.addCleanup(cleanup)
@@ -137,9 +169,10 @@ else:
             process.stdin.write(json.dumps(dict(jsonrpc='2.0', id=1, method=method,
                                                 params=params or {})) + '\n')
             process.stdin.flush()
-            ready, _, _ = select.select([process.stdout], [], [], 5)
-            self.assertTrue(ready, 'MCP did not respond on the open stdio connection')
-            line = process.stdout.readline()
+            try:
+                line = replies.get(timeout=5)
+            except queue.Empty:
+                self.fail('MCP did not respond on the open stdio connection')
             self.assertTrue(line, 'MCP exited early')
             response = json.loads(line)
             self.assertNotIn('error', response)

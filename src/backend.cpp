@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "paths.h"
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
@@ -98,7 +99,7 @@ void Backend::connectAgents() {
 QString Backend::readPage(const QString &relative) {
   if (!m_store) return {};
   const QString path = QFileInfo(project() + '/' + relative).canonicalFilePath();
-  if (path.isEmpty() || !(path.startsWith(project() + "/.lore/wiki/") || path.startsWith(project() + "/.lore/sources/"))) { message(tr("This page is outside the project memory.")); return {}; }
+  if (path.isEmpty() || !(Paths::contains(project() + "/.lore/wiki", path) || Paths::contains(project() + "/.lore/sources", path))) { message(tr("This page is outside the project memory.")); return {}; }
   try { return Store::read(path); } catch(const std::exception &e) { message(QString::fromUtf8(e.what())); return {}; }
 }
 QString Backend::markdown(const QString &text, const QString &accent) const {

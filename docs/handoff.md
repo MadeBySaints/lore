@@ -30,8 +30,8 @@ official integration documentation.
 ## Validation completed
 
 - Linux build succeeded with Qt 6.12, qmake6, and GCC 16.
-- Qt test runner: 14 passed, including setup/cleanup and real QML interaction.
-- Python CLI integration suite: 6 tests passed.
+- Qt test runner: 18 passed, including setup/cleanup and real QML interaction.
+- Python CLI integration suite: 7 tests passed.
 - Live learning passes through codex-cli 0.170.0 and Claude Code 2.1.326 both
   created cited memory using fictional project text.
 - Arch package built; desktop entry validated; installed GUI opened on Omarchy.
@@ -56,23 +56,29 @@ private `.lore/` directory. See the README for backup instructions if that memor
 also needs to move. This repository has no model credentials; authenticate
 Codex or Claude separately on the new machine.
 
-## Windows support discussed, not implemented
+## Windows Claude hooks
 
-The current binary, installers, and tests target Linux. Qt makes a native port
-possible, but the following work remains:
+Claude hooks now use exec form (`command` plus an argument array) on every
+platform. Native Windows paths are passed verbatim without Bash or PowerShell.
+Reconnect migrates the previous shell form and updates marked Lore hooks when
+the executable moves, while preserving unrelated settings and callbacks.
 
-1. Add a Windows build/deployment path that bundles the necessary Qt modules,
-   QML plugins, SQLite driver, and Windows platform plugin.
-2. Audit filesystem logic. In particular, `Store::write` stops its ancestor
-   walk at `/`; Windows drive roots need a platform-independent termination
-   condition. Review path comparisons, case sensitivity, UNC paths, permission
-   handling, and symlink/reparse-point behavior.
-3. Adapt project hook command quoting and shell selection. Current hook
-   commands use POSIX single-quote escaping.
-4. Verify executable discovery and launching for native Claude/Codex installs,
-   including `.exe` and command-wrapper variants, MCP stdio, and headless Qt.
-5. Port shell-based helpers and Unix-specific test fixtures, add Windows CI,
-   then exercise the full capture/learn/resume cycle on Windows.
+Ancestor traversal terminates at drive/UNC roots. Canonical project containment
+uses Windows path separators and case-insensitive comparisons on Windows.
+Tests cover drive roots, UNC paths, project boundaries, Unicode and special
+characters in executable and project paths, and original-record deduplication.
+
+PowerShell scripts build, test, and package a Windows executable with Qt runtime
+dependencies. `.github/workflows/windows.yml` runs the native Qt and CLI suites,
+then tests a packaged executable with Qt SDK paths removed. The provider fixtures
+are native executables and the MCP pipe test is portable across both platforms.
+Windows builds enable console output so headless hooks can return JSON.
+
+Live authentication and actual Windows Claude/Codex CLI distributions still
+require validation on a Windows machine. In particular, learning must account
+for `.cmd`/`.bat` shims if the provider is installed through npm; QProcess cannot
+launch those as native executables. Windows archives inherit directory ACLs;
+Unix owner-only permission bits do not configure Windows ACLs.
 
 WSL2 is a possible interim route, but has not been tested. Lore and the coding
 agents should share the same Linux environment for that workflow.

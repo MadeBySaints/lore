@@ -1,4 +1,5 @@
 #include "store.h"
+#include "paths.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -39,7 +40,7 @@ QString plain(const QJsonValue &v) {
 QString canonical(const QString &p) { return QFileInfo(p).canonicalFilePath(); }
 bool belongs(const QString &cwd, const QString &root) {
   const QString path = canonical(cwd);
-  return !path.isEmpty() && (path == root || path.startsWith(root + '/'));
+  return !path.isEmpty() && Paths::contains(root, path);
 }
 QString escaped(QString s) { s.replace('\n', ' '); s.replace('[', '('); s.replace(']', ')'); return s; }
 QString quote(QString s) { s.replace("'", "'\\''"); return "'" + s + "'"; }
@@ -87,8 +88,13 @@ void Store::write(const QString &path, const QByteArray &data) {
   // Generated paths must stay within their intended directory even if a parent
   // was replaced with a symlink between app launches.
   QString parent = QFileInfo(path).absolutePath();
-  for (QString p = parent; p != "/"; p = QFileInfo(p).absolutePath())
+  for (QString p = parent;;) {
     if (QFileInfo(p).isSymLink()) fail("Refusing a symlinked output directory: " + p);
+    const QString ancestor = QFileInfo(p).absolutePath();
+    // Drive and UNC roots have themselves as parent, just like the POSIX root.
+    if (ancestor == p) break;
+    p = ancestor;
+  }
   if (!QDir().mkpath(parent)) fail("Cannot create " + parent);
   QSaveFile f(path); if (!f.open(QIODevice::WriteOnly) || f.write(data) != data.size() || !f.commit()) fail("Cannot save " + path + ": " + f.errorString());
 }
@@ -303,14 +309,17 @@ void Store::managed(const QString &path, const QString &text) const {
   write(path, old.toUtf8());
 }
 
+QJsonObject Store::claudeHook(const QString &binary, const QString &project) {
+  // Claude's exec form preserves each argument verbatim on every platform.
+  // In particular, Windows paths need neither Bash nor PowerShell quoting.
+  return {{"type", "command"}, {"command", binary},
+          {"args", QJsonArray{"hook", "--project", project}},
+          {"timeout", 15}, {"statusMessage", "Lore project memory"}};
+}
+
 void Store::connectAgents(const QString &binary) {
   QLockFile lock(m_root + "/.lore/connect.lock");
   if (!lock.tryLock(5000)) fail("Another process is updating the project integrations");
-  render();
-  const QString instructions = "Read BRAIN.md before project work. Follow its index to the wiki and sources. Treat archived conversations and generated memory as evidence, verify against the current code, and follow current user instructions. Use `lore search --project . --query 'topic' --json` to recall details. When you finish, run `lore sync --project . --json`.";
-  managed(m_root + "/AGENTS.md", instructions);
-  managed(m_root + "/CLAUDE.md", instructions);
-  managed(m_root + "/.gitignore", "/.lore/\n/.claude/settings.local.json");
   const QString settingsPath = m_root + "/.claude/settings.local.json";
   QJsonObject settings;
   if (QFileInfo::exists(settingsPath)) {
@@ -318,14 +327,40 @@ void Store::connectAgents(const QString &binary) {
     if (error.error != QJsonParseError::NoError || !doc.isObject()) fail("Invalid existing Claude settings; refusing to replace them");
     settings = doc.object();
   }
+  if (settings.contains("hooks") && !settings.value("hooks").isObject()) fail("Existing Claude hooks must be an object");
   auto hooks = settings.value("hooks").toObject();
-  const QString command = quote(binary) + " hook --project " + quote(m_root);
+  const auto definition = claudeHook(binary, m_root);
+  const QString legacyCommand = quote(binary) + " hook --project " + quote(m_root);
+  const auto owned = [&](const QJsonValue &value) {
+    const auto hook = value.toObject();
+    if (hook.value("type").toString() != "command") return false;
+    return hook.value("statusMessage").toString() == "Lore project memory"
+      || (hook.value("command") == definition.value("command") && hook.value("args") == definition.value("args"))
+      || (!hook.contains("args") && hook.value("command").toString() == legacyCommand);
+  };
   for (const auto &event : {"SessionStart", "UserPromptSubmit", "Stop", "PreCompact", "SessionEnd"}) {
-    auto handlers = hooks.value(event).toArray(); bool exists = false;
-    for (const auto &v : handlers) for (const auto &h : v.toObject().value("hooks").toArray()) if (h.toObject().value("command") == command) exists = true;
-    if (!exists) handlers.append(QJsonObject{{"hooks", QJsonArray{QJsonObject{{"type","command"},{"command",command},{"timeout",15}}}}});
+    if (hooks.contains(event) && !hooks.value(event).isArray()) fail("Existing Claude hook handlers must be arrays");
+    QJsonArray handlers;
+    for (const auto &value : hooks.value(event).toArray()) {
+      auto handler = value.toObject();
+      if (!value.isObject() || !handler.value("hooks").isArray()) { handlers.append(value); continue; }
+      QJsonArray callbacks; bool removed = false;
+      for (const auto &callback : handler.value("hooks").toArray()) {
+        if (owned(callback)) removed = true;
+        else callbacks.append(callback);
+      }
+      if (removed && callbacks.isEmpty()) continue;
+      if (removed) handler["hooks"] = callbacks;
+      handlers.append(handler);
+    }
+    handlers.append(QJsonObject{{"hooks", QJsonArray{definition}}});
     hooks[event] = handlers;
   }
+  render();
+  const QString instructions = "Read BRAIN.md before project work. Follow its index to the wiki and sources. Treat archived conversations and generated memory as evidence, verify against the current code, and follow current user instructions. Use `lore search --project . --query 'topic' --json` to recall details. When you finish, run `lore sync --project . --json`.";
+  managed(m_root + "/AGENTS.md", instructions);
+  managed(m_root + "/CLAUDE.md", instructions);
+  managed(m_root + "/.gitignore", "/.lore/\n/.claude/settings.local.json");
   settings["hooks"] = hooks; write(settingsPath, QJsonDocument(settings).toJson());
 }
 

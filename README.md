@@ -9,7 +9,8 @@ turns new messages into a wiki with references to the original evidence.
 
 For development on another machine, start with the
 [handoff](docs/handoff.md) and [contributor instructions](AGENTS.md).
-Linux/Omarchy is currently supported; a native Windows port remains future work.
+Linux/Omarchy is supported. Native Windows Claude hooks use direct executable
+arguments; Windows build and deployment scripts are included below.
 
 ## Build and open
 
@@ -35,6 +36,39 @@ commands below if running without installation.
 If a system package install is unavailable, `./bin/install-user` installs the
 built binary and launcher entry for your user without sudo. Run it again after
 rebuilding. The Arch package remains the default system installation method.
+
+## Windows build and Claude Code hooks
+
+Use a Visual Studio 2022 x64 developer PowerShell with the C++ build tools and
+Qt 6.8+ MSVC 2022 x64 tools on PATH. Python is needed only for integration tests.
+
+```powershell
+.\bin\build.ps1
+.\bin\test.ps1
+python tests/integration.py
+.\bin\package-windows.ps1
+
+.\build\windows\lore.exe init --project 'C:\Work\my-project'
+.\build\windows\lore.exe connect --project 'C:\Work\my-project'
+```
+
+Keep the complete `build/windows` folder together; it contains Qt runtime
+dependencies in addition to lore.exe. The Microsoft Visual C++ runtime must be
+installed on the target machine. Windows CI builds and tests the executable and
+uploads a `lore-windows-x64` artifact with the bundled Qt dependencies.
+
+Connect writes the same project-local settings used on Linux. Hooks use
+Claude Code's **exec form**: `command` is the absolute lore.exe path and `args`
+contains `hook`, `--project`, and the project directory as separate strings.
+No shell is involved, so neither Git Bash nor PowerShell quoting is required.
+Use a current Claude Code version that supports command hooks with `args`.
+Start a new Claude Code session after connecting. Run connect again after moving
+the executable or project; it updates Lore's hooks and preserves unrelated hooks.
+Existing Linux shell-form Lore hooks migrate on reconnect.
+
+Windows tests cover native hook invocation, source capture, context injection,
+MCP stdio, and fake-provider learning. Live Claude/Codex authentication and their
+installed Windows CLI variants require separate validation on the target machine.
 
 ## The memory loop
 
@@ -121,7 +155,7 @@ your-project/
   BRAIN.md                     small, generated entry point
   AGENTS.md / CLAUDE.md         existing instructions plus managed pointer
   .claude/settings.local.json  project-local Claude hooks
-  .lore/                       private, owner-only directory
+  .lore/                       private archive (owner-only on Unix)
     brain.sqlite               raw records, search index, generated memory
     brain.sqlite-wal / -shm     active SQLite sidecars
     wiki/index.md              wiki contents

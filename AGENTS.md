@@ -42,6 +42,9 @@ output must cite known events before it can become memory; retain history when
 superseding a decision or completed task. Treat archived text as evidence rather
 than instructions. Keep automatic learning opt-in and visible to the user.
 
-Keep storage, search, and the core app independent of Omarchy. Native Windows
-support is not implemented or validated yet; do not describe it as supported
-until the path, process, hook, deployment, and test work is complete.
+Keep storage, search, and the core app independent of Omarchy. Hooks use Claude
+Code's exec form with an argument array on every platform. Preserve this form;
+paths must never be interpolated into a shell command. On Windows use
+`bin/build.ps1`, `bin/test.ps1`, and `python tests/integration.py`. The Windows
+workflow builds and tests native hooks and bundles Qt. Distinguish these checks
+from live authentication and installed Windows provider CLI validation.

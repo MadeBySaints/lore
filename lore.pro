@@ -1,7 +1,10 @@
 QT += core gui qml quick quickcontrols2 sql
 CONFIG += c++17 release
+CONFIG -= debug_and_release
+win32-msvc*: QMAKE_CXXFLAGS += /utf-8
+win32: CONFIG += console
 TARGET = lore
 TEMPLATE = app
-HEADERS += src/store.h src/backend.h src/theme.h src/translator.h
+HEADERS += src/store.h src/backend.h src/theme.h src/translator.h src/paths.h
 SOURCES += src/main.cpp src/store.cpp src/backend.cpp src/theme.cpp src/translator.cpp
 RESOURCES += src/resources.qrc
