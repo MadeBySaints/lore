@@ -12,6 +12,11 @@
 - Installed CLI help checked against codex-cli 0.170.0 and Claude Code 2.1.326.
 - [Qt Windows deployment](https://doc.qt.io/qt-6/windows-deployment.html):
   windeployqt bundles the Qt DLLs, QML modules, and runtime plugins.
+- [Ollama embeddings](https://docs.ollama.com/api/embed) and
+  [EmbeddingGemma](https://ollama.com/library/embeddinggemma): optional loopback
+  embeddings, batched inputs, and a separately downloaded local model.
+- [SQLite FTS5](https://sqlite.org/fts5.html): lexical ranking for exact terms;
+  task retrieval combines it with memory/file matches and optional vectors.
 
 Saved transcript formats can change across CLI versions. Fixtures cover Claude
 Code message records and Codex session_meta/response_item JSONL records. Unknown

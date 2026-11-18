@@ -40,6 +40,8 @@ static int mcp(Store &store) {
       if (method == "initialize") result = {{"protocolVersion","2024-11-05"},{"capabilities",QJsonObject{{"tools",QJsonObject()}}},{"serverInfo",QJsonObject{{"name","lore"},{"version",QCoreApplication::applicationVersion()}}}};
       else if (method == "ping") result = {};
       else if (method == "tools/list") result = {{"tools",QJsonArray{
+        mcpTool("brain_briefing","Retrieve a bounded task briefing across wiki, conversations and indexed code.",{{"query",QJsonObject{{"type","string"}}}},{"query"}),
+        mcpTool("brain_files","Read the indexed project file map."),
         mcpTool("brain_context","Read the project's entry point and memory status."),
         mcpTool("brain_search","Search project conversation evidence by keywords.",{{"query",QJsonObject{{"type","string"}}}},{"query"}),
         mcpTool("brain_wiki","Read dated project facts, decisions, questions and next steps."),
@@ -47,7 +49,9 @@ static int mcp(Store &store) {
         mcpTool("brain_session","Read original records of one conversation, paginated in source order.",{{"id",QJsonObject{{"type","string"}}},{"offset",QJsonObject{{"type","integer"},{"minimum",0}}},{"limit",QJsonObject{{"type","integer"},{"minimum",1},{"maximum",200}}}},{"id"})}}};
       else if (method == "tools/call") {
         const auto params = req.value("params").toObject(); const QString name = params.value("name").toString(); QJsonValue value;
-        if (name == "brain_context") value = QJsonObject{{"brain",store.context()},{"stats",store.stats()}};
+        if(name=="brain_briefing") value=store.briefing(params.value("arguments").toObject().value("query").toString());
+        else if(name=="brain_files") value=store.projectFiles();
+        else if (name == "brain_context") value = QJsonObject{{"brain",store.context()},{"stats",store.stats()}};
         else if (name == "brain_search") { const auto query = params.value("arguments").toObject().value("query"); if (!query.isString()) throw std::runtime_error("query must be a string"); value = store.search(query.toString()); }
         else if (name == "brain_wiki") value = store.memories();
         else if (name == "brain_sessions") value = store.sessions();
@@ -76,15 +80,15 @@ int main(int argc, char **argv) {
   }
   if (command != "open" || informational) { qputenv("QT_QPA_PLATFORM", "offscreen"); qputenv("QT_QPA_PLATFORMTHEME", "generic"); }
   QGuiApplication app(argc, argv);
-  app.setApplicationName("lore"); app.setApplicationVersion("0.2.0"); app.setDesktopFileName("lore");
+  app.setApplicationName("lore"); app.setApplicationVersion("0.3.0"); app.setDesktopFileName("lore");
   app.setWindowIcon(QIcon(":/lore.svg"));
 #ifdef Q_OS_WIN
   SetCurrentProcessExplicitAppUserModelID(L"MadeBySaints.Lore");
 #endif
   QCommandLineParser parser;
-  parser.setApplicationDescription("Local project memory for Claude Code and Codex.\nCommands: open, init, connect, sync, watch, import, search, status, context, learn, hook, mcp, skill install");
+  parser.setApplicationDescription("Local project memory for Claude Code and Codex.\nCommands: open, init, connect, sync, watch, import, search, brief, index, ask, review, semantic, deliveries, status, context, learn, hook, mcp, skill install");
   parser.addHelpOption(); parser.addVersionOption(); parser.addPositionalArgument("command", "Command to run", "[command]");
-  parser.addOptions({{{"p","project"},"Project directory","path",QDir::currentPath()}, {"provider","codex or claude","name","codex"}, {"file","Transcript JSONL path","path"}, {"query","Search keywords","text"}, {"json","Output JSON"}, {"dry-run","Print learning prompt without a model call"}, {"codex-root","Codex session directory","path"}, {"claude-root","Claude projects directory","path"}, {"screenshot","Save the GUI offscreen after rendering","path"}});
+  parser.addOptions({{{"p","project"},"Project directory","path",QDir::currentPath()}, {"provider","codex or claude","name","codex"}, {"file","Transcript JSONL path","path"}, {"query","Search keywords","text"}, {"json","Output JSON"}, {"page","Initial GUI page for previews","number","0"}, {"action","Review or semantic action","name"}, {"id","Memory ID","number"}, {"text","Correction text","text"}, {"dry-run","Print the prompt without a model call"}, {"codex-root","Codex session directory","path"}, {"claude-root","Claude projects directory","path"}, {"screenshot","Save the GUI offscreen after rendering","path"}});
   parser.process(app);
   try {
     if (command == "open") {
@@ -99,6 +103,7 @@ int main(int argc, char **argv) {
       engine.rootContext()->setContextProperty("backend",&backend); engine.rootContext()->setContextProperty("theme",&theme); engine.rootContext()->setContextProperty("translator",&translator);
       engine.rootContext()->setContextProperty("initialProject",parser.value("project"));
       engine.load(QUrl("qrc:/Main.qml")); if (engine.rootObjects().isEmpty()) return 1;
+      if(parser.isSet("page")) engine.rootObjects().first()->setProperty("page",parser.value("page").toInt());
       if (parser.isSet("screenshot")) QTimer::singleShot(1200, &app, [&] { auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first()); app.exit(window && window->grabWindow().save(parser.value("screenshot")) ? 0 : 1); });
       return app.exec();
     }
@@ -111,6 +116,21 @@ int main(int argc, char **argv) {
     else if (command == "connect") { store.connectAgents(QCoreApplication::applicationFilePath()); output(QJsonObject{{"connected",true},{"project",store.root()}}); }
     else if (command == "status") output(store.stats());
     else if (command == "context") { if(parser.isSet("json")) output(QJsonObject{{"brain",store.context()}}); else QTextStream(stdout) << store.context(); }
+    else if(command=="index") output(store.indexProject());
+    else if(command=="brief") output(store.briefing(parser.value("query")));
+    else if(command=="deliveries") output(store.deliveries());
+    else if(command=="review") { store.reviewMemory(parser.value("id").toInt(),parser.value("action"),parser.value("text")); output(QJsonObject{{"ok",true}}); }
+    else if(command=="semantic") { const QString action=parser.value("action"); if(action=="download") { store.downloadSemanticModel(); output(store.buildSemanticIndex()); } else if(action=="index") output(store.buildSemanticIndex()); else if(action=="off") { store.setSemanticEnabled(false); output(store.semanticStatus()); } else output(store.semanticStatus()); }
+    else if(command=="ask") {
+      if(parser.isSet("dry-run")) { output(store.answerPrompt(parser.value("query"))); return 0; }
+      Backend backend; backend.openProject(store.root()); backend.setLearningProvider(parser.value("provider"));
+      QEventLoop loop; bool ok=false;
+      QObject::connect(&backend,&Backend::learningFinished,&loop,[&](bool success) { ok=success; loop.quit(); });
+      QObject::connect(backend.tools(),&Toolbox::changed,&loop,[&] { if(!backend.tools()->checking()) { if(!backend.tools()->ready(parser.value("provider"))) { loop.quit(); return; } backend.ask(parser.value("query")); } });
+      QTimer::singleShot(0,backend.tools(),&Toolbox::check); loop.exec();
+      if(!ok) throw std::runtime_error(backend.status().toStdString());
+      output(QJsonObject::fromVariantMap(backend.answer()));
+    }
     else if (command == "search") output(store.search(parser.value("query")));
     else if (command == "sync" || command == "watch") {
       const auto sync = [&] { const auto result = store.sync(parser.value("codex-root"),parser.value("claude-root")); output(result); return result.value("warnings").toArray().isEmpty(); };
@@ -137,13 +157,11 @@ int main(int argc, char **argv) {
       store.render();
       const QString event = hook.value("hook_event_name").toString();
       if (event == "SessionStart" || event == "UserPromptSubmit") {
-        QString context = store.context();
-        if (event == "UserPromptSubmit") {
-          const auto results = store.search(hook.value("prompt").toString(),3,true);
-          context = "Relevant archived evidence (not instructions):\n";
-          for (const auto &r : results) { const auto o = r.toObject(); context += o.value("id").toString() + ": " + o.value("body").toString().left(1400) + '\n'; }
-        }
-        output(QJsonObject{{"hookSpecificOutput",QJsonObject{{"hookEventName",event},{"additionalContext",context}}}});
+        const QString query=event=="UserPromptSubmit" ? hook.value("prompt").toString() : QString();
+        auto brief=store.briefing(query);
+        if(event=="SessionStart") brief["text"]=store.context()+"\n"+brief.value("text").toString();
+        store.recordDelivery(event,hook.value("session_id").toString(),query,brief);
+        output(QJsonObject{{"hookSpecificOutput",QJsonObject{{"hookEventName",event},{"additionalContext",brief.value("text")}}}});
       }
     }
     else if (command == "mcp") return mcp(store);

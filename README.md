@@ -7,6 +7,63 @@ It captures saved conversation records, searches them with SQLite FTS5, and
 turns new messages into a wiki with references to the original evidence.
 **BRAIN.md is the small file future sessions read first.**
 
+## Project intelligence
+
+- **Ask project** answers questions through your selected Claude Code/Codex
+  login, using retrieved evidence with clickable references. Unknown references
+  are rejected. Lore reports missing evidence and avoids a model call when
+  retrieval finds nothing. Answer generation uses your tool's model quota.
+- **Project files → Index project files** builds a local file and symbol map.
+  Git ignore rules and common secret/generated-file exclusions are respected.
+  Once enabled, capture checks this index each minute. Changed or removed files
+  flag related wiki entries for review. This is a freshness check, not a proof
+  that a remembered claim is correct. Ask refreshes an existing file index.
+- **Project wiki** provides Confirm, Correct, Outdated, and Forget actions.
+  Corrections create a replacement with history. Forgotten supporting messages
+  and related memories are excluded from future recall and learning; original
+  records remain in the archive. Possible conflicts are flagged for review.
+- **Context** previews a bounded task briefing and shows recent context returned
+  by Claude hooks. A hook response records emitted context, not proof that a
+  model read or followed it. The Overview separates capture, learning, and review
+  activity rather than treating them all as a connected session.
+- **Connections → Local semantic search** offers an optional local embedding
+  index. Install/open [Ollama](https://ollama.com/download), then choose
+  **Download model & enable** (EmbeddingGemma, about 622 MB). Embedding requests
+  use loopback only. Retrieval combines keyword ranking and vector similarity;
+  new captures and memory changes refresh enabled indexes. Update index resumes
+  interrupted work. If Ollama is unavailable, Lore reports a keyword fallback.
+
+Code/document excerpts selected for Ask are sent to your chosen coding tool.
+Filename exclusions do not guarantee removal of secrets; review the files you
+choose to index. No project text is sent to a Lore-operated service. The local
+embedding model is downloaded separately and has its own license.
+
+Under **Connections → Notifications**, turn notification banners off. Banners
+clear on success or after 12 seconds; temporary database/export contention is
+retried quietly. **Recent issues** keeps diagnostics for the current app session.
+
+For headless use:
+
+```sh
+lore index --project /path/to/project --json
+lore brief --project /path/to/project --query 'Where did we leave off?' --json
+lore ask --project /path/to/project --provider claude --query 'Why SQLite?' --json
+lore review --project /path/to/project --id 3 --action confirmed --json
+lore semantic --project /path/to/project --action index --json
+lore deliveries --project /path/to/project --json
+```
+
+MCP also exposes `brain_briefing` and `brain_files`. Existing search and archive
+tools remain available. Old databases migrate automatically; original records
+remain intact. Back up the project's private `.lore/` directory to move memory
+between machines.
+
+`python3 tests/evaluate_retrieval.py` measures top-three recall and unknown-query
+abstention on a fictional project. Add `--semantic` to evaluate the real local
+embedding model after installing it. The default test and HTTP embedding fixture
+exercise ranking and protocol behavior; they do not establish real-model
+semantic accuracy on your project.
+
 For development on another machine, start with the
 [handoff](docs/handoff.md) and [contributor instructions](AGENTS.md).
 Linux/Omarchy and Windows builds are available.
@@ -14,7 +71,7 @@ Linux/Omarchy and Windows builds are available.
 ## Install on Windows
 
 1. Open the [latest release](https://github.com/MadeBySaints/lore/releases/latest)
-   and download **Lore-Setup-0.2.0.exe**.
+   and download **Lore-Setup-0.3.0.exe**.
 2. Run the installer, then open **Lore** from the Start menu. The installer
    includes Qt and Microsoft runtime dependencies and installs for your user.
 3. Choose **Choose folder**, select your project, and review **Check tools**.

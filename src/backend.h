@@ -29,6 +29,14 @@ class Backend : public QObject {
   Q_PROPERTY(bool capturing READ capturing NOTIFY statusChanged)
   Q_PROPERTY(QVariantList recentProjects READ recentProjects NOTIFY changed)
   Q_PROPERTY(Toolbox *tools READ tools CONSTANT)
+  Q_PROPERTY(QVariantList files READ files NOTIFY changed)
+  Q_PROPERTY(QVariantList activity READ activity NOTIFY changed)
+  Q_PROPERTY(QVariantList deliveries READ deliveries NOTIFY changed)
+  Q_PROPERTY(QVariantMap semantic READ semantic NOTIFY changed)
+  Q_PROPERTY(QVariantMap answer READ answer NOTIFY changed)
+  Q_PROPERTY(QVariantMap preview READ preview NOTIFY changed)
+  Q_PROPERTY(bool notificationsEnabled READ notificationsEnabled WRITE setNotificationsEnabled NOTIFY statusChanged)
+  Q_PROPERTY(QVariantList notices READ notices NOTIFY statusChanged)
 public:
   struct CapturePaths { QString codex, claude; };
   explicit Backend(QObject *parent = nullptr, FilePicker *picker = nullptr, const QString &preferences = {}, CapturePaths capturePaths = {});
@@ -40,7 +48,7 @@ public:
   QVariantList results() const { return m_results; }
   QString brain() const { return m_brain; }
   QString status() const { return m_status; }
-  bool busy() const { return m_process.state() != QProcess::NotRunning; }
+  bool busy() const { return m_process.state() != QProcess::NotRunning || m_work.isRunning(); }
   bool watching() const { return m_watch.isActive(); }
   void setWatching(bool on);
   bool autoLearning() const { return m_autoLearning; }
@@ -54,6 +62,22 @@ public:
   bool capturing() const { return m_capturing; }
   QVariantList recentProjects() const;
   Toolbox *tools() { return &m_tools; }
+  QVariantList files() const { return m_files; }
+  QVariantList activity() const { return m_activity; }
+  QVariantList deliveries() const { return m_deliveries; }
+  QVariantMap semantic() const { return m_semantic; }
+  QVariantMap answer() const { return m_answer; }
+  QVariantMap preview() const { return m_preview; }
+  bool notificationsEnabled() const { return m_notificationsEnabled; }
+  void setNotificationsEnabled(bool on);
+  QVariantList notices() const { return m_notices; }
+  Q_INVOKABLE void indexProject();
+  Q_INVOKABLE void updateSemantic(bool download = false);
+  Q_INVOKABLE void disableSemantic();
+  Q_INVOKABLE void installSemanticRuntime();
+  Q_INVOKABLE void ask(const QString &question);
+  Q_INVOKABLE void previewContext(const QString &query);
+  Q_INVOKABLE void reviewMemory(int id, const QString &action, const QString &correction = {});
   Q_INVOKABLE void chooseProject();
   Q_INVOKABLE void locateTool(const QString &id);
   Q_INVOKABLE bool selectProject(const QString &path);
@@ -93,6 +117,17 @@ private:
   bool m_connected = false, m_restoring = false, m_capturing = false;
   CapturePaths m_capturePaths;
   QFutureWatcher<QJsonObject> m_capture;
+  QFutureWatcher<QJsonObject> m_work;
+  std::shared_ptr<std::atomic_bool> m_cancelWork;
+  QVariantList m_files, m_activity, m_deliveries;
+  QVariantMap m_semantic, m_answer, m_preview;
+  QString m_workKind, m_operation, m_question;
+  bool m_notificationsEnabled = true;
+  QVariantList m_notices;
+  QTimer m_notificationExpiry;
+  QJsonArray m_answerEvidence;
+  void work(const QString &kind, const QString &query = {});
+  void startModel(const QString &prompt, const QString &provider);
   void refresh();
   void message(const QString &text, bool error = false);
   void savePreferences();

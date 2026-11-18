@@ -23,6 +23,9 @@ def run(*args, **kwargs):
 
 
 run('init')
+(project / 'src').mkdir()
+(project / 'src' / 'storage.py').write_text('class LibraryStore:\n    \"\"\"SQLite metadata and local documents.\"\"\"\n')
+run('index')
 claude = scratch / 'claude.jsonl'
 conversation = [
     ('user', 'Build Atlas, a local research library. Keep documents and references on disk.'),
@@ -56,7 +59,7 @@ def entry(title,kind,body,index):
     return dict(title=title,kind=kind,body=body,refs=[events[index]['id']])
 result={'entries':[
  entry('A library that lives on your machine','fact','Atlas is a local research library. Documents and references stay on disk.',0),
- entry('SQLite and full text search','decision','Use SQLite for metadata and FTS5 for keyword search. Preserve original documents.',1),
+ entry('SQLite and full text search','decision','Use SQLite in src/storage.py for metadata and FTS5 for keyword search. Preserve original documents.',1),
  entry('A small index, a linked knowledge base','decision','Keep the entry point short. Follow topic pages and citations to retrieve detail when needed.',2),
  entry('Connect search results to their original sources','next','Wire the search index into the library view, then verify that every result opens its source.',5)
 ]}
@@ -66,11 +69,16 @@ fake.chmod(0o700)
 env['PATH'] = str(tools) + os.pathsep + os.environ['PATH']
 run('learn', '--provider', 'codex')
 run('connect')
+run('review', '--id', '2', '--action', 'confirmed')
+run('hook', input=json.dumps(dict(hook_event_name='SessionStart', session_id='fictional-preview')))
 env['PATH'] = os.environ['PATH']
 language = scratch / 'language'
 env['LORE_LANGUAGE_FILE'] = str(language)
 language.write_text('en\n')
 run('open', '--screenshot', str(ROOT / 'docs/lore.png'))
+run('open', '--page', '7', '--screenshot', str(ROOT / 'build/lore-project.png'))
+run('open', '--page', '8', '--screenshot', str(ROOT / 'build/lore-context.png'))
+run('open', '--page', '6', '--screenshot', str(ROOT / 'build/lore-ask.png'))
 language.write_text('da\n')
 run('open', '--screenshot', str(ROOT / 'build/lore-da.png'))
 print(project)

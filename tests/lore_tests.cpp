@@ -16,6 +16,10 @@
 #include <QTextStream>
 #include <QQuickItem>
 #include <QStandardPaths>
+#include <QSqlQuery>
+#include <QLockFile>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <filesystem>
 #include <QtTest>
 
@@ -32,6 +36,36 @@ public:
   using FilePicker::FilePicker;
   void choose(bool, const QString &) override { opened = true; }
   void pick(const QString &path) { emit selected(path); }
+};
+class EmbeddingFixture : public QTcpServer {
+public:
+  int requests=0;
+  bool invalid=false;
+  QString digest="fixture-v1";
+  EmbeddingFixture() {
+    listen(QHostAddress::LocalHost);
+    connect(this,&QTcpServer::newConnection,this,[this] {
+      auto *socket=nextPendingConnection();
+      connect(socket,&QTcpSocket::disconnected,socket,&QObject::deleteLater);
+      connect(socket,&QTcpSocket::readyRead,socket,[this,socket] {
+        QByteArray bytes=socket->property("request").toByteArray()+socket->readAll(); socket->setProperty("request",bytes);
+        const int split=bytes.indexOf("\r\n\r\n"); if(split<0 || socket->property("responded").toBool()) return;
+        const auto match=QRegularExpression("Content-Length: (\\d+)",QRegularExpression::CaseInsensitiveOption).match(QString::fromLatin1(bytes.left(split)));
+        const int size=match.hasMatch()?match.captured(1).toInt():0; if(bytes.size()-split-4<size) return;
+        socket->setProperty("responded",true); ++requests;
+        const auto body=QJsonDocument::fromJson(bytes.mid(split+4)).object(); QJsonArray embeddings;
+        for(const auto &text:body.value("input").toArray()) {
+          const QString s=text.toString().toLower();
+          const bool local=s.contains("hosted service") || s.section(" | text: ",1).contains("information must stay");
+          embeddings.append(invalid ? QJsonArray{0,0} : local ? QJsonArray{1,0} : QJsonArray{0,1});
+        }
+        const QJsonObject result=bytes.startsWith("GET /api/tags") ? QJsonObject{{"models",QJsonArray{QJsonObject{{"name","embeddinggemma:latest"},{"digest",digest}}}}} : QJsonObject{{"embeddings",embeddings}};
+        const QByteArray response=QJsonDocument(result).toJson(QJsonDocument::Compact);
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "+QByteArray::number(response.size())+"\r\nConnection: close\r\n\r\n"+response); socket->disconnectFromHost();
+      });
+    });
+  }
+  QByteArray url() const { return "http://127.0.0.1:"+QByteArray::number(serverPort()); }
 };
 class LoreTests : public QObject {
   Q_OBJECT
@@ -242,6 +276,98 @@ private slots:
     QVERIFY2(finished.first().first().toBool(),qPrintable(backend.status()));
     QCOMPARE(backend.memories().size(),1);
   }
+  void migratesAnExistingArchiveWithoutChangingRecords() {
+    QTemporaryDir p,logs;
+    { Store old(p.path(),true); Store::write(logs.filePath("s.jsonl"),claude(p.path(),"user","Keep this original record.")); old.ingest(logs.filePath("s.jsonl"),"claude"); old.render(); }
+    const QString name="migration-fixture";
+    { auto db=QSqlDatabase::addDatabase("QSQLITE",name); db.setDatabaseName(p.filePath(".lore/brain.sqlite")); QVERIFY(db.open()); QSqlQuery q(db);
+      for(const auto &table:{"memory_review","memory_links","memory_conflicts","project_files","project_settings","forgotten_events","embeddings","deliveries","activity"}) QVERIFY(q.exec("DROP TABLE "+QString(table)));
+      QVERIFY(q.exec("PRAGMA user_version=1")); db.close();
+    }
+    QSqlDatabase::removeDatabase(name);
+    Store upgraded(p.path()); QCOMPARE(upgraded.stats().value("events").toInt(),1); QCOMPARE(upgraded.search("original").size(),1); QVERIFY(upgraded.deliveries().isEmpty()); upgraded.render(); QVERIFY(upgraded.context().contains("1 records"));
+  }
+  void indexesCodeLinksMemoryAndDetectsChanges() {
+    QTemporaryDir p,logs; Store store(p.path(),true);
+    Store::write(p.filePath("src/auth.cpp"),"class SessionManager {};\n// authentication entry point\n");
+    Store::write(p.filePath(".env"),"SENSITIVE=never index\n");
+    Store::write(p.filePath("node_modules/private.js"),"never index\n");
+    QCOMPARE(store.indexProject().value("files").toInt(),1);
+    QVERIFY(store.projectFiles().first().toObject().value("symbols").toString().contains("SessionManager"));
+    Store::write(logs.filePath("s.jsonl"),claude(p.path(),"user","Keep authentication in src/auth.cpp")); store.ingest(logs.filePath("s.jsonl"),"claude");
+    const auto batch=store.learningBatch().value("events").toArray(); store.learn(entry(batch.first().toObject().value("id").toString()),batch,"fake");
+    QCOMPARE(store.memories().first().toObject().value("files").toArray(),QJsonArray{"src/auth.cpp"});
+    QVERIFY(!store.memories().first().toObject().value("stale").toBool());
+    Store::write(p.filePath("src/auth.cpp"),"class UpdatedSessionManager {};\n"); store.indexProject();
+    QVERIFY(store.memories().first().toObject().value("stale").toBool()); QCOMPARE(store.stats().value("stale").toInt(),1);
+    store.reviewMemory(1,"confirmed"); QVERIFY(!store.memories().first().toObject().value("stale").toBool());
+    QVERIFY(store.context().contains("Project file map"));
+    const auto brief=store.briefing("UpdatedSessionManager",8,false); QVERIFY(!brief.value("evidence").toArray().isEmpty());
+    QVERIFY(Store::read(p.filePath(brief.value("evidence").toArray().first().toObject().value("url").toString())).contains("UpdatedSessionManager"));
+  }
+  void correctionsConflictsAndForgetControlRecall() {
+    QTemporaryDir p,logs; Store store(p.path(),true); const QString path=logs.filePath("s.jsonl");
+    Store::write(path,claude(p.path(),"user","Use SQLite for the database.")); store.ingest(path,"claude"); auto batch=store.learningBatch().value("events").toArray();
+    store.learn(entry(batch.first().toObject().value("id").toString()),batch,"fake");
+    Store::write(path,claude(p.path(),"user","Use SQLite for the database.")+claude(p.path(),"user","We might use PostgreSQL instead.")); store.ingest(path,"claude"); batch=store.learningBatch().value("events").toArray();
+    auto changed=entry(batch.first().toObject().value("id").toString()); auto e=changed["entries"].toArray().first().toObject(); e["body"]="Use PostgreSQL for storage."; changed["entries"]=QJsonArray{e}; store.learn(changed,batch,"fake");
+    QVERIFY(!store.memories().first().toObject().value("conflicts").toArray().isEmpty());
+    store.reviewMemory(2,"outdated"); store.reviewMemory(1,"corrected","Use SQLite for the database. PostgreSQL was only a proposal.");
+    const auto corrected=store.memories().first().toObject(); QCOMPARE(corrected.value("review").toString(),QString("corrected"));
+    const auto recall=store.briefing("database",3,false).value("evidence").toArray(); QCOMPARE(recall.first().toObject().value("id").toString(),QString("memory:3"));
+    QVERIFY(store.memories()[2].toObject().value("supersededBy").toInt()==3);
+    store.reviewMemory(3,"forgotten");
+    for(const auto &v:store.evidence()) { const auto o=v.toObject(); QVERIFY(o.value("id").toString()!="memory:1" && o.value("id").toString()!="memory:3"); }
+    QVERIFY(store.search("SQLite").isEmpty()); QVERIFY(!store.sessions().isEmpty());
+    QCOMPARE(store.briefing("meaninglessxyz",8,false).value("evidence").toArray().size(),0);
+  }
+  void semanticRetrievalFindsDifferentWordingAndRejectsBadVectors() {
+    EmbeddingFixture server; QVERIFY(server.isListening()); const auto old=qgetenv("LORE_EMBED_URL"); const auto restore=qScopeGuard([&] { qputenv("LORE_EMBED_URL",old); }); qputenv("LORE_EMBED_URL",server.url());
+    QTemporaryDir p,logs; Store store(p.path(),true); Store::write(logs.filePath("s.jsonl"),claude(p.path(),"user","All information must stay on this computer.")+claude(p.path(),"user","The interface uses yellow buttons.")); store.ingest(logs.filePath("s.jsonl"),"claude");
+    QVERIFY(store.briefing("Why avoid a hosted service?",3,false).value("evidence").toArray().isEmpty());
+    QCOMPARE(store.buildSemanticIndex().value("updated").toInt(),2);
+    const auto recall=store.briefing("Why avoid a hosted service?",3); QCOMPARE(recall.value("retrieval").toString(),QString("hybrid"));
+    QVERIFY(recall.value("evidence").toArray().first().toObject().value("body").toString().contains("information must stay"));
+    QCOMPARE(store.buildSemanticIndex().value("updated").toInt(),0);
+    server.invalid=true; const auto fallback=store.briefing("yellow"); QCOMPARE(fallback.value("retrieval").toString(),QString("keyword fallback")); QVERIFY(!fallback.value("warning").toString().isEmpty());
+    store.setSemanticEnabled(false); QVERIFY(!store.semanticStatus().value("enabled").toBool());
+  }
+  void answersRequireCitationsAndRejectChangedEvidence() {
+    QTemporaryDir p; Store store(p.path(),true); Store::write(p.filePath("auth.cpp"),"// Authentication uses local sessions\n"); store.indexProject();
+    const auto evidence=store.briefing("authentication",8,false).value("evidence").toArray(); QVERIFY(!evidence.isEmpty()); const QString id=evidence.first().toObject().value("id").toString();
+    QJsonObject answer{{"answer","Authentication uses local sessions ["+id+"]"},{"refs",QJsonArray{id}},{"insufficient",false}};
+    QVERIFY(!store.saveAnswer(answer,evidence,"How does authentication work?").isEmpty());
+    auto bad=answer; bad["refs"]=QJsonArray{"invented"}; QVERIFY_THROWS_EXCEPTION(std::runtime_error,store.saveAnswer(bad,evidence,"question"));
+    bad=answer; bad["answer"]="Uncited claim"; QVERIFY_THROWS_EXCEPTION(std::runtime_error,store.saveAnswer(bad,evidence,"question"));
+    Store::write(p.filePath("auth.cpp"),"// Authentication changed\n"); QVERIFY_THROWS_EXCEPTION(std::runtime_error,store.saveAnswer(answer,evidence,"question"));
+    store.recordDelivery("UserPromptSubmit","fixture-session","authentication",store.briefing("authentication",8,false));
+    QCOMPARE(store.deliveries().first().toObject().value("session").toString(),QString("fixture-session"));
+    QVERIFY(store.deliveries().first().toObject().value("text").toString().contains(id));
+  }
+  void transientExportContentionRecoversAndNotificationsExpire() {
+    QTemporaryDir p,logs,data; Store store(p.path(),true); store.render(); QLockFile lock(p.filePath(".lore/render.lock")); QVERIFY(lock.tryLock());
+    Store::write(logs.filePath("s.jsonl"),claude(p.path(),"user","A durable captured message")); store.ingest(logs.filePath("s.jsonl"),"claude"); store.render(); QCOMPARE(store.stats().value("events").toInt(),1);
+    lock.unlock(); store.sync(logs.path(),logs.path()); QVERIFY(store.context().contains("1 conversations"));
+    const auto old=qgetenv("LORE_NOTIFICATION_TIMEOUT_MS"); const auto restore=qScopeGuard([&] { qputenv("LORE_NOTIFICATION_TIMEOUT_MS",old); }); qputenv("LORE_NOTIFICATION_TIMEOUT_MS","100");
+    const QString preferences=data.filePath("preferences.json");
+    { Backend backend(nullptr,nullptr,preferences,{logs.path(),logs.path()}); QVERIFY(!backend.selectProject(data.filePath("missing"))); QVERIFY(!backend.error().isEmpty()); QTRY_VERIFY(backend.error().isEmpty()); QVERIFY(!backend.notices().isEmpty()); backend.setNotificationsEnabled(false); QVERIFY(!backend.selectProject(data.filePath("missing"))); QVERIFY(backend.error().isEmpty()); }
+    Backend restored(nullptr,nullptr,preferences,{logs.path(),logs.path()}); QVERIFY(!restored.notificationsEnabled());
+  }
+  void backendAnswersThroughProviderAndAbstainsWithoutEvidence() {
+    QTemporaryDir p,logs,tools;
+    const QString executable=tools.filePath(
+#ifdef Q_OS_WIN
+      "claude.exe"
+#else
+      "claude"
+#endif
+    );
+    QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(),executable)); QFile::setPermissions(executable,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner);
+    Store store(p.path(),true); Store::write(logs.filePath("s.jsonl"),claude(p.path(),"user","Authentication uses local sessions.")); store.ingest(logs.filePath("s.jsonl"),"claude"); store.render();
+    Backend backend(nullptr,nullptr,{}, {logs.path(),logs.path()}); QVERIFY(backend.openProject(p.path())); backend.setLearningProvider("claude"); backend.tools()->setExecutable("claude",executable); QTRY_VERIFY(!backend.tools()->checking()); QVERIFY(backend.tools()->ready("claude"));
+    QSignalSpy finished(&backend,&Backend::learningFinished); backend.ask("How does authentication work?"); QTRY_COMPARE_WITH_TIMEOUT(finished.size(),1,10000); QVERIFY2(finished.first().first().toBool(),qPrintable(backend.status())); QVERIFY(!backend.answer().value("refs").toList().isEmpty());
+    backend.ask("xyzunrelatedunknown"); QTRY_COMPARE_WITH_TIMEOUT(finished.size(),2,10000); QVERIFY(backend.answer().value("insufficient").toBool());
+  }
   void guidedConnectionRemembersTheProjectAndSettings() {
     QTemporaryDir p, data, logs;
     const QString preferences = data.filePath("preferences.json");
@@ -319,6 +445,8 @@ private slots:
     window->show(); QTest::qWait(200);
     auto click = [&](const QString &name) {
       auto *item = window->findChild<QQuickItem *>(name);
+      std::function<QQuickItem *(QQuickItem *)> find=[&](QQuickItem *parent) -> QQuickItem * { if(parent->objectName()==name) return parent; for(auto *child:parent->childItems()) if(auto *found=find(child)) return found; return nullptr; };
+      if(!item) item=find(window->contentItem());
       if (!item) return false;
       const QPoint point = item->mapToScene(QPointF(item->width()/2,item->height()/2)).toPoint();
       QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,point); return true;
@@ -331,6 +459,10 @@ private slots:
     QCOMPARE(window->property("page").toInt(),3);
     for (const auto key : {Qt::Key_S,Qt::Key_Q,Qt::Key_L}) QTest::keyClick(window,key);
     QTest::keyClick(window,Qt::Key_Escape); QVERIFY(!window->property("helpVisible").toBool());
+    QVERIFY(click("nav6")); QCOMPARE(window->property("page").toInt(),6);
+    auto *question=window->findChild<QQuickItem *>("askQuestion"); QVERIFY(question); question->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Q); QVERIFY(window->isVisible());
+    QVERIFY(click("nav8")); QCOMPARE(window->property("page").toInt(),8);
+    backend.setWatching(false); QVERIFY(click("previewContextButton")); QTRY_VERIFY(!backend.busy()); QVERIFY(!backend.preview().value("text").toString().isEmpty());
   }
 };
 
@@ -346,13 +478,22 @@ int main(int argc, char **argv) {
       output << "{\"loggedIn\":true}\n"; return 0;
     }
     const QString prompt = input.readAll(), marker = "NEW EVENTS:\n";
-    const int start = prompt.lastIndexOf(marker);
-    const auto events = QJsonDocument::fromJson(prompt.mid(start + marker.size()).toUtf8()).array();
-    if (start < 0 || events.isEmpty()) return 1;
     if (provider == "codex" && (!args.contains("--ephemeral") || !args.contains("--sandbox"))) return 1;
     if (provider == "claude" && (!args.contains("--no-session-persistence") || !args.contains("--strict-mcp-config"))) return 1;
-    const QString ref = qEnvironmentVariableIsSet("LORE_TEST_INVALID_REFS") ? "invented" : events.first().toObject().value("id").toString();
-    const QString result = QString::fromUtf8(QJsonDocument(entry(ref)).toJson(QJsonDocument::Compact));
+    QJsonObject payload;
+    if(prompt.startsWith("Answer the user's project question")) {
+      const auto found=QRegularExpression("\\[((?:event|memory|file):[^\\]]+)\\]").match(prompt);
+      if(!found.hasMatch()) return 1;
+      const QString ref=qEnvironmentVariableIsSet("LORE_TEST_INVALID_REFS")?"invented":found.captured(1);
+      payload={{"answer","Use local sessions ["+ref+"]"},{"refs",QJsonArray{ref}},{"insufficient",false}};
+    } else {
+      const int start=prompt.lastIndexOf(marker);
+      const auto events=QJsonDocument::fromJson(prompt.mid(start+marker.size()).toUtf8()).array();
+      if(start<0 || events.isEmpty()) return 1;
+      const QString ref=qEnvironmentVariableIsSet("LORE_TEST_INVALID_REFS")?"invented":events.first().toObject().value("id").toString();
+      payload=entry(ref);
+    }
+    const QString result=QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
     const QJsonObject response = provider == "codex"
       ? QJsonObject{{"type","item.completed"},{"item",QJsonObject{{"type","agent_message"},{"text",result}}}}
       : QJsonObject{{"result",result},{"is_error",false}};

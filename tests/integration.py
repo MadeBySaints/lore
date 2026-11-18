@@ -141,6 +141,21 @@ class IntegrationTests(unittest.TestCase):
                     f.write(json.dumps(dict(self.records[0], timestamp=f'new-{provider}')) + '\n')
                 self.capture()
 
+    def test_project_index_and_audited_hook_context(self):
+        (self.project / 'auth.py').write_text('class SessionManager:\n    pass\n', encoding='utf-8')
+        indexed = self.run_cli('index')
+        self.assertEqual(json.loads(indexed.stdout)['files'], 1)
+        brief = json.loads(self.run_cli('brief', '--query', 'SessionManager').stdout)
+        self.assertEqual(brief['evidence'][0]['type'], 'file')
+        self.assertIn('SessionManager', brief['text'])
+        payload = dict(hook_event_name='UserPromptSubmit', session_id='fixture',
+                       transcript_path=str(self.transcript), prompt='SessionManager')
+        response = json.loads(self.run_cli('hook', input=json.dumps(payload)).stdout)
+        self.assertIn('SessionManager', response['hookSpecificOutput']['additionalContext'])
+        delivery = json.loads(self.run_cli('deliveries').stdout)[0]
+        self.assertEqual(delivery['session'], 'fixture')
+        self.assertEqual(delivery['text'], response['hookSpecificOutput']['additionalContext'])
+
     def test_mcp_responds_before_stdin_closes(self):
         self.capture()
         process = subprocess.Popen([str(BINARY), 'mcp', '--project', str(self.project)],
@@ -180,7 +195,7 @@ class IntegrationTests(unittest.TestCase):
 
         self.assertIn('protocolVersion', request('initialize'))
         tools = request('tools/list')['tools']
-        self.assertEqual(len(tools), 5)
+        self.assertEqual(len(tools), 7)
         search = request('tools/call', dict(name='brain_search', arguments={'query': 'SQLite'}))
         self.assertIn('Choose SQLite', search['content'][0]['text'])
         sessions = request('tools/call', dict(name='brain_sessions', arguments={}))

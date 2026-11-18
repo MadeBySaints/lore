@@ -30,11 +30,14 @@ official integration documentation.
 ## Validation completed
 
 - Linux build succeeded with Qt 6.12, qmake6, and GCC 16.
-- Qt test runner: 21 passed, including setup/cleanup and real QML interaction.
-- Python CLI integration suite: 7 tests passed.
+- Qt test runner: 28 passed, including setup/cleanup and real QML interaction.
+- Python CLI integration suite: 8 tests passed.
 - Live learning passes through codex-cli 0.170.0 and Claude Code 2.1.326 both
   created cited memory using fictional project text.
 - Arch package built; desktop entry validated; installed GUI opened on Omarchy.
+- Live Ask project through Claude returned a cited answer for fictional code.
+- Offline retrieval evaluation: 5/5 questions found expected evidence in the top
+  three results; the unknown keyword query returned no evidence.
 - English/Danish previews were inspected. The README screenshot contains only
   fictional project data.
 
@@ -109,7 +112,28 @@ agents should share the same Linux environment for that workflow.
 
 ## Other current limits
 
-Search is keyword-based. Semantic embeddings, fuzzy search, remote sync,
-encryption, and email digests are not implemented. Only data exposed in saved
-JSONL logs can be captured. Saved transcript formats may change across CLI
-versions. Generated claims still require checking against current code.
+Version 0.3.0 adds Ask project, a local file/symbol index, reviewed/corrected/
+outdated/forgotten memory states, possible-conflict flags, code freshness checks,
+task briefings, and a hook context audit. The SQLite migration is additive.
+Ask validates citation IDs, inline references, evidence freshness, and file
+hashes before saving an answer; these checks do not prove entailment or truth.
+The latest valid answer is restored when its project is reopened.
+
+Optional semantic retrieval uses Ollama's loopback `/api/embed` endpoint with
+EmbeddingGemma. Connections supplies runtime download and model/index buttons;
+the model is separate, opt-in, and about 622 MB. Cached vectors are matched to
+document hashes, merged with lexical ranking, and excluded when stale or
+forgotten. Cancelled indexing can resume. Keyword fallback is explicit.
+After an initial file index, capture checks changes each minute while open.
+Symbol extraction is a lightweight declaration scan, not a full language server.
+
+Notification banners expire after 12 seconds or clear on success. A persisted
+toggle hides banners; Recent issues retains app-session diagnostics. Contended
+Markdown exports defer safely and retry using generation counters. Existing
+databases skip repeated schema creation, reducing writer contention.
+
+The retrieval evaluation and HTTP embedding fixture use fictional data. Real
+embedding quality must be measured separately with `--semantic`; no embedding
+model is silently downloaded during tests. Remote sync, encryption, and email
+digests are not implemented. Only saved transcript records can be captured.
+Generated claims still require checking against current code.

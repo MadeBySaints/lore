@@ -1,5 +1,6 @@
 <RCC><qresource prefix="/">
   <file alias="Main.qml">Main.qml</file>
+  <file>AskPage.qml</file><file>ProjectPage.qml</file><file>ContextPage.qml</file><file>MemoryCard.qml</file>
   <file alias="i18n/da.json">i18n/da.json</file>
   <file alias="agent-skill.md">agent-skill.md</file>
   <file alias="lore.svg">../pkgbuild/lore.svg</file>

@@ -1,4 +1,4 @@
-name: Windows hooks
+name: Windows build and installer
 
 on:
   push:
@@ -34,6 +34,9 @@ jobs:
       - name: CLI and hook integration tests
         shell: pwsh
         run: python tests/integration.py
+      - name: Retrieval evaluation
+        shell: pwsh
+        run: python tests/evaluate_retrieval.py
       - name: Bundle Qt runtime
         shell: pwsh
         run: .\bin\package-windows.ps1

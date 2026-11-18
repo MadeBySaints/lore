@@ -4,7 +4,7 @@ $scratch = Join-Path ([IO.Path]::GetTempPath()) ('Lore-install-' + [guid]::NewGu
 $destination = Join-Path $scratch "Lore's app folder"
 $project = Join-Path $scratch 'project-memory'
 $image = Join-Path $scratch 'installed-ui.png'
-$setup = Join-Path $root 'build/installer/Lore-Setup-0.2.0.exe'
+$setup = Join-Path $root 'build/installer/Lore-Setup-0.3.0.exe'
 $evidence = Join-Path $root 'build/install-check'
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 $old = @{}

@@ -7,6 +7,10 @@ remaining platform work. `README.md` describes installation and user workflows.
 
 - `src/store.{h,cpp}`: project-owned SQLite database, JSONL import, FTS5 recall,
   source exports, cited wiki entries, supersession, and agent integrations.
+- `src/intelligence.cpp`: Store's file indexing, review/corrections, evidence
+  retrieval, loopback embedding client, answer validation, and hook audit.
+- `src/AskPage.qml`, `ProjectPage.qml`, `ContextPage.qml`, `MemoryCard.qml`:
+  project questions, file map, delivered context, and memory review controls.
 - `src/backend.{h,cpp}`: GUI state, capture polling, provider processes, and
   optional automatic learning.
 - `src/main.cpp`: application startup, headless commands, hooks, and MCP stdio.
@@ -26,6 +30,7 @@ remaining platform work. `README.md` describes installation and user workflows.
 ./bin/build
 ./bin/test
 python3 tests/integration.py
+python3 tests/evaluate_retrieval.py
 ```
 
 The app requires Qt 6 and a C++17 compiler. Tests use temporary directories and
@@ -60,3 +65,13 @@ opt-in per project. On Windows, lore-desktop.exe opens the GUI without a console
 lore.exe remains the headless hook/CLI binary. Build the Inno Setup installer
 with `bin/installer-windows.ps1` after packaging, and validate install, launch,
 and uninstall with `tests/windows-installer.ps1`.
+
+The embedding fixture listens on loopback; restricted runners need permission
+for local networking. No model download or cloud call belongs in the default
+tests. Run the optional retrieval evaluation with `--semantic` only when a real
+local model is installed, and distinguish those results from fixture results.
+Exclude forgotten evidence from retrieval and learning, including wiki entries
+that share its references. Never treat citation existence, user confirmation,
+or unchanged file hashes as proof of factual correctness. Code changes mark
+memory for checking. Hook audit records indicate context returned by Lore,
+not model compliance. Keep database migration additive and preserve originals.
