@@ -7,6 +7,7 @@
 #include <QProcess>
 #include <QTimer>
 #include <QVariantList>
+#include <functional>
 #include <memory>
 
 class Backend : public QObject {
@@ -27,6 +28,8 @@ class Backend : public QObject {
   Q_PROPERTY(QString error READ error NOTIFY statusChanged)
   Q_PROPERTY(bool selecting READ selecting NOTIFY statusChanged)
   Q_PROPERTY(bool capturing READ capturing NOTIFY statusChanged)
+  Q_PROPERTY(bool showBusy READ showBusy NOTIFY statusChanged)
+  Q_PROPERTY(bool showCapturing READ showCapturing NOTIFY statusChanged)
   Q_PROPERTY(QVariantList recentProjects READ recentProjects NOTIFY changed)
   Q_PROPERTY(Toolbox *tools READ tools CONSTANT)
   Q_PROPERTY(QVariantList files READ files NOTIFY changed)
@@ -60,6 +63,10 @@ public:
   QString error() const { return m_errorMessage; }
   bool selecting() const { return !m_pickerPurpose.isEmpty(); }
   bool capturing() const { return m_capturing; }
+  // What the interface shows. Background work (automatic capture, index refreshes, search as you type)
+  // stays invisible unless it runs longer than a moment, so controls don't flicker every few seconds.
+  bool showBusy() const { return m_process.state() != QProcess::NotRunning || (m_work.isRunning() && (!m_quietWork || m_revealed)); }
+  bool showCapturing() const { return m_capturing && (!m_quietCapture || m_revealed); }
   QVariantList recentProjects() const;
   Toolbox *tools() { return &m_tools; }
   QVariantList files() const { return m_files; }
@@ -127,7 +134,15 @@ private:
   QVariantList m_notices;
   QTimer m_notificationExpiry;
   QJsonArray m_answerEvidence;
-  void work(const QString &kind, const QString &query = {});
+  bool m_quietCapture = false, m_quietWork = false, m_revealed = false;
+  QTimer m_reveal;
+  std::function<void()> m_whenIdle;
+  void work(const QString &kind, const QString &query = {}, bool quiet = false);
+  void syncNow(bool quiet);
+  bool deferUntilIdle(std::function<void()> action);
+  void quietWorkStarted();
+  void quietWorkEnded();
+  void runDeferred();
   void startModel(const QString &prompt, const QString &provider);
   void refresh();
   void message(const QString &text, bool error = false);

@@ -13,9 +13,9 @@ ColumnLayout {
     TextArea { id: question; objectName: "askQuestion"; placeholderText: qsTr("Why did we choose this approach?"); wrapMode: TextEdit.Wrap; selectByMouse: true }
   }
   RowLayout {
-    Button { Material.roundedScale: theme.radius; objectName: "askProjectButton"; text: qsTr("Ask project"); highlighted: true; enabled: question.text.trim().length > 0 && !backend.busy && !backend.capturing; onClicked: backend.ask(question.text) }
-    Button { Material.roundedScale: theme.radius; text: qsTr("Preview evidence first"); enabled: question.text.trim().length > 0 && !backend.busy && !backend.capturing; onClicked: { backend.previewContext(question.text); root.previewRequested() } }
-    Label { visible: backend.busy; text: qsTr("Working… You can cancel from the top bar."); color: "#9aa69b"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+    Button { Material.roundedScale: theme.radius; objectName: "askProjectButton"; text: qsTr("Ask project"); highlighted: true; enabled: question.text.trim().length > 0 && !backend.showBusy && !backend.showCapturing; onClicked: backend.ask(question.text) }
+    Button { Material.roundedScale: theme.radius; text: qsTr("Preview evidence first"); enabled: question.text.trim().length > 0 && !backend.showBusy && !backend.showCapturing; onClicked: { backend.previewContext(question.text); root.previewRequested() } }
+    Label { visible: backend.showBusy; text: qsTr("Working… You can cancel from the top bar."); color: "#9aa69b"; wrapMode: Text.Wrap; Layout.fillWidth: true }
   }
   Label { text: backend.answer.insufficient ? qsTr("More evidence needed") : qsTr("Answer with references"); visible: !!backend.answer.answer; color: theme.accent; font.pixelSize: 16 }
   ScrollView { Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; clip: true

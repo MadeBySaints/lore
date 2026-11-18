@@ -10,7 +10,7 @@ ColumnLayout {
   Label { text: qsTr("Inspect what Lore prepares and what its hooks returned to Claude Code. A recorded hook response does not prove the model followed or read every reference."); color: "#9aa69b"; wrapMode: Text.Wrap; Layout.fillWidth: true }
   RowLayout { Layout.fillWidth: true
     TextField { id: query; objectName: "contextQuery"; Layout.fillWidth: true; placeholderText: qsTr("Describe your next task…"); selectByMouse: true }
-    Button { Material.roundedScale: theme.radius; objectName: "previewContextButton"; text: qsTr("Preview context"); enabled: !backend.busy && !backend.capturing; onClicked: backend.previewContext(query.text) }
+    Button { Material.roundedScale: theme.radius; objectName: "previewContextButton"; text: qsTr("Preview context"); enabled: !backend.showBusy && !backend.showCapturing; onClicked: backend.previewContext(query.text) }
   }
   Button { Material.roundedScale: theme.radius; visible: !!backend.preview.text; text: qsTr("Open prepared briefing (%1)").arg(backend.preview.retrieval || ""); onClicked: root.read(qsTr("Context preview · not sent"),backend.preview.text) }
   Label { visible: !!backend.preview.warning; text: backend.preview.warning || ""; color: "#d8b888"; wrapMode: Text.Wrap; Layout.fillWidth: true }

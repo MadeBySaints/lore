@@ -29,18 +29,22 @@ Backend::Backend(QObject *parent, FilePicker *picker, const QString &preferences
   connect(m_picker, &FilePicker::failed, this, [this](const QString &reason) { m_pickerPurpose.clear(); message(reason, true); });
   connect(&m_capture, &QFutureWatcher<QJsonObject>::finished, this, [this] {
     m_capturing = false;
+    const bool quiet = m_quietCapture; m_quietCapture = false; quietWorkEnded();
+    QTimer::singleShot(0, this, &Backend::runDeferred);
     const auto result = m_capture.result();
     try { refresh(); } catch (const std::exception &e) { message(QString::fromUtf8(e.what()), true); }
     if (result.contains("error")) { message(result.value("error").toString(), true); return; }
     if (m_autoLearning && result.value("added").toInt() > 0) m_auto.start();
-    if((result.value("added").toInt()>0 || result.value("projectChanged").toBool()) && m_semantic.value("enabled").toBool()) QTimer::singleShot(1200,this,[this] { if(!busy() && !capturing()) updateSemantic(false); });
+    if((result.value("added").toInt()>0 || result.value("projectChanged").toBool()) && m_semantic.value("enabled").toBool()) QTimer::singleShot(1200,this,[this] { if(!busy() && !capturing()) work("semantic",{},true); });
     const auto warnings = result.value("warnings").toArray();
     if (!warnings.isEmpty()) message(tr("Some conversations could not be captured: %1").arg(QString::fromUtf8(QJsonDocument(warnings).toJson(QJsonDocument::Compact))), true);
-    else if (!busy()) message(m_stats.value("events").toInt() == 0 ? tr("Connected and watching. Start a new coding session in this project to capture your first conversation.") : tr("Capture is up to date. %1 new records saved.").arg(result.value("added").toInt()));
+    else if (!busy() && (!quiet || result.value("added").toInt() > 0)) message(m_stats.value("events").toInt() == 0 ? tr("Connected and watching. Start a new coding session in this project to capture your first conversation.") : tr("Capture is up to date. %1 new records saved.").arg(result.value("added").toInt()));
     emit statusChanged();
   });
   m_watch.setInterval(5000);
-  connect(&m_watch, &QTimer::timeout, this, &Backend::sync);
+  connect(&m_watch, &QTimer::timeout, this, [this] { syncNow(true); });
+  m_reveal.setSingleShot(true); m_reveal.setInterval(1500);
+  connect(&m_reveal, &QTimer::timeout, this, [this] { m_revealed = true; emit statusChanged(); });
   m_auto.setSingleShot(true); m_auto.setInterval(60000);
   connect(&m_auto, &QTimer::timeout, this, [this] {
     if (!m_autoLearning || busy() || m_stats.value("pending").toInt() == 0) return;
@@ -81,11 +85,14 @@ Backend::Backend(QObject *parent, FilePicker *picker, const QString &preferences
       ok = true;
     } catch(const std::exception &e) { message(QString::fromUtf8(e.what()), true); }
     if (ok && m_operation!="ask" && m_autoLearning && m_stats.value("pending").toInt() > 0) m_auto.start();
-    if(ok && m_operation!="ask" && m_semantic.value("enabled").toBool()) QTimer::singleShot(0,this,[this] { if(!busy() && !capturing()) updateSemantic(false); });
+    if(ok && m_operation!="ask" && m_semantic.value("enabled").toBool()) QTimer::singleShot(0,this,[this] { if(!busy() && !capturing()) work("semantic",{},true); });
+    QTimer::singleShot(0, this, &Backend::runDeferred);
     emit statusChanged(); emit learningFinished(ok);
   });
   connect(&m_work, &QFutureWatcher<QJsonObject>::finished, this, [this] {
     const auto result=m_work.result();
+    if(m_quietWork) { m_quietWork=false; quietWorkEnded(); }
+    QTimer::singleShot(0, this, &Backend::runDeferred);
     if(result.contains("error")) { message(result.value("error").toString(),true); if(m_workKind=="ask") emit learningFinished(false); return; }
     try {
       refresh();
@@ -171,20 +178,38 @@ void Backend::setAutoLearning(bool on) {
   if (on) { setWatching(true); m_auto.start(); } else m_auto.stop();
   savePreferences(); emit statusChanged();
 }
-void Backend::sync() {
-  if (!m_store || capturing() || busy()) return;
+void Backend::sync() { syncNow(false); }
+void Backend::syncNow(bool quiet) {
+  if (!m_store) return;
+  if (capturing() && !quiet && m_quietCapture) { m_quietCapture = false; quietWorkEnded(); message(tr("Capturing saved conversations…")); return; }
+  if (capturing() || busy()) { if (!quiet) deferUntilIdle([this] { syncNow(false); }); return; }
   const QString root = project(); const auto paths = m_capturePaths;
-  m_capturing = true;
+  m_capturing = true; m_quietCapture = quiet;
+  if (quiet) { quietWorkStarted(); emit statusChanged(); }
   m_capture.setFuture(QtConcurrent::run([root, paths] {
     try { Store store(root); return store.sync(paths.codex, paths.claude); }
     catch (const std::exception &e) { return QJsonObject{{"error", QString::fromUtf8(e.what())}}; }
   }));
-  message(tr("Capturing saved conversations…"));
+  if (!quiet) message(tr("Capturing saved conversations…"));
+}
+void Backend::quietWorkStarted() { if (!m_revealed && !m_reveal.isActive()) m_reveal.start(); }
+void Backend::quietWorkEnded() {
+  if ((m_capturing && m_quietCapture) || (m_work.isRunning() && m_quietWork)) return;
+  m_reveal.stop(); m_revealed = false;
+}
+bool Backend::deferUntilIdle(std::function<void()> action) {
+  // A click that lands while only background work is running waits for it instead of being dropped.
+  if (showBusy() || showCapturing()) return false;
+  m_whenIdle = std::move(action); return true;
+}
+void Backend::runDeferred() {
+  if (!m_whenIdle || busy() || capturing()) return;
+  auto action = std::move(m_whenIdle); m_whenIdle = nullptr; action();
 }
 void Backend::search(const QString &text) {
   m_query=text;
   if(text.trimmed().isEmpty()) { m_results.clear(); emit resultsChanged(); return; }
-  work("retrieve",text);
+  work("retrieve",text,true);
 }
 
 void Backend::connectAgents() {
@@ -224,9 +249,10 @@ QString Backend::markdown(const QString &text, const QString &accent) const {
   return html;
 }
 void Backend::reveal() { if (m_store) QDesktopServices::openUrl(QUrl::fromLocalFile(project())); }
-void Backend::cancel() { if(m_cancelWork) *m_cancelWork=true; setAutoLearning(false); if (busy()) { m_cancelled = true; m_process.kill(); message(tr("Learning cancelled. Your captured data is safe.")); } }
+void Backend::cancel() { m_whenIdle = nullptr; if(m_cancelWork) *m_cancelWork=true; setAutoLearning(false); if (busy()) { m_cancelled = true; m_process.kill(); message(tr("Learning cancelled. Your captured data is safe.")); } }
 void Backend::learn(const QString &provider) {
-  if (!m_store || busy()) return;
+  if (!m_store) return;
+  if (busy()) { deferUntilIdle([this, provider] { learn(provider); }); return; }
   if (provider != "codex" && provider != "claude") { message(tr("Choose Codex or Claude.")); emit learningFinished(false); return; }
   const auto tool = m_tools.command(provider);
   if (!tool.available()) { message(tr("Set up %1 in Connections before learning.").arg(provider == "claude" ? "Claude Code" : "Codex"), true); emit learningFinished(false); return; }
@@ -242,7 +268,8 @@ void Backend::setLearningProvider(const QString &provider) {
   m_learningProvider = provider; savePreferences(); emit statusChanged();
 }
 void Backend::chooseProject() {
-  if (selecting() || busy() || capturing()) return;
+  if (selecting()) return;
+  if (busy() || capturing()) { deferUntilIdle([this] { chooseProject(); }); return; }
   m_pickerPurpose = "project"; emit statusChanged(); m_picker->choose(true, tr("Choose the project folder Lore should remember"));
 }
 void Backend::locateTool(const QString &id) {
@@ -250,6 +277,7 @@ void Backend::locateTool(const QString &id) {
   m_pickerPurpose = id; emit statusChanged(); m_picker->choose(false, tr("Locate %1").arg(id == "claude" ? "Claude Code" : "Codex"));
 }
 bool Backend::selectProject(const QString &path) {
+  if ((busy() || capturing()) && deferUntilIdle([this, path] { selectProject(path); })) return true;
   if (busy() || capturing()) { message(tr("Wait for capture to finish, or cancel learning before switching projects."), true); return false; }
   QString folder = path.trimmed(); if (folder.startsWith("~/")) folder.replace(0, 1, QDir::homePath());
   folder = QFileInfo(folder).canonicalFilePath();
@@ -321,9 +349,10 @@ void Backend::startModel(const QString &prompt,const QString &provider) {
   clearError(); m_process.start(tool.program,tool.arguments+args); m_process.write(prompt.toUtf8()); m_process.closeWriteChannel();
   m_timeout.start(); message(m_operation=="ask" ? tr("Answering from project evidence using %1…").arg(provider) : tr("Learning through %1 using your existing login…").arg(provider));
 }
-void Backend::work(const QString &kind,const QString &query) {
-  if(!m_store || busy() || capturing()) return;
-  const QString root=project(); m_workKind=kind; m_cancelWork=std::make_shared<std::atomic_bool>(false); const auto cancel=m_cancelWork;
+void Backend::work(const QString &kind,const QString &query,bool quiet) {
+  if(!m_store) return;
+  if(busy() || capturing()) { if(!quiet) deferUntilIdle([this,kind,query] { work(kind,query); }); return; }
+  const QString root=project(); m_workKind=kind; m_quietWork=quiet; m_cancelWork=std::make_shared<std::atomic_bool>(false); const auto cancel=m_cancelWork;
   m_work.setFuture(QtConcurrent::run([root,kind,query,cancel] {
     try {
       Store store(root); store.setCancellation(cancel);
@@ -334,6 +363,7 @@ void Backend::work(const QString &kind,const QString &query) {
       return store.briefing(query);
     } catch(const std::exception &e) { return QJsonObject{{"error",QString::fromUtf8(e.what())}}; }
   }));
+  if(quiet) { quietWorkStarted(); emit statusChanged(); return; }
   message(kind=="download" ? tr("Downloading the local embedding model (about 622 MB), then indexing. You can cancel and resume later.") : tr("Preparing project evidence…"));
 }
 void Backend::indexProject() { work("index"); }
@@ -346,4 +376,4 @@ void Backend::openReleases() {
 }
 void Backend::ask(const QString &question) { if(question.trimmed().isEmpty()) return; if(!m_tools.ready(m_learningProvider)) { message(tr("Sign in to your selected coding tool in Connections before asking."),true); return; } m_answer.clear(); emit changed(); work("ask",question.trimmed().left(4000)); }
 void Backend::previewContext(const QString &query) { work("preview",query); }
-void Backend::reviewMemory(int id,const QString &action,const QString &correction) { if(!m_store || busy() || capturing()) return; try { m_store->reviewMemory(id,action,correction); m_answer.clear(); m_preview.clear(); refresh(); if(m_semantic.value("enabled").toBool()) QTimer::singleShot(0,this,[this] { updateSemantic(false); }); message(tr("Memory review saved.")); } catch(const std::exception &e) { message(QString::fromUtf8(e.what()),true); } }
+void Backend::reviewMemory(int id,const QString &action,const QString &correction) { if(!m_store) return; if(busy() || capturing()) { deferUntilIdle([this,id,action,correction] { reviewMemory(id,action,correction); }); return; } try { m_store->reviewMemory(id,action,correction); m_answer.clear(); m_preview.clear(); refresh(); if(m_semantic.value("enabled").toBool()) QTimer::singleShot(0,this,[this] { work("semantic",{},true); }); message(tr("Memory review saved.")); } catch(const std::exception &e) { message(QString::fromUtf8(e.what()),true); } }

@@ -75,7 +75,7 @@ ApplicationWindow {
       Layout.fillWidth: true
       Rectangle { width: 8; height: 8; radius: 4; color: entry.state === "ready" ? theme.accent : entry.state === "missing" ? "#bd9971" : win.muted }
       Label { text: entry.name; color: win.ink; font.pixelSize: 16; font.bold: true; Layout.fillWidth: true }
-      RadioButton { text: qsTr("Use for learning"); checked: backend.learningProvider === entry.id; enabled: entry.available && !backend.busy; onClicked: backend.learningProvider = entry.id }
+      RadioButton { text: qsTr("Use for learning"); checked: backend.learningProvider === entry.id; enabled: entry.available && !backend.showBusy; onClicked: backend.learningProvider = entry.id }
       Button { text: qsTr("Install"); visible: !entry.available; onClicked: backend.tools.install(entry.id) }
       Button { text: qsTr("Sign in"); visible: entry.available && entry.state !== "ready"; enabled: !backend.tools.checking; onClicked: backend.tools.signIn(entry.id) }
       Button { text: qsTr("Locate…"); flat: true; enabled: !backend.selecting && !backend.tools.checking; onClicked: backend.locateTool(entry.id) }
@@ -102,7 +102,7 @@ ApplicationWindow {
           Body { text: qsTr("Your project, remembered."); font.pixelSize: 11; Layout.bottomMargin: 4 }
           Caption { text: qsTr("PROJECT") }
           Label { text: ready ? backend.stats.name : qsTr("Choose a project"); color: win.ink; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
-          Button { Layout.preferredHeight: 34; Layout.minimumHeight: 34; Layout.maximumHeight: 34; objectName: "switchProjectButton"; text: qsTr("Switch project…"); flat: true; enabled: !backend.busy && !backend.capturing && !backend.selecting; onClicked: backend.chooseProject() }
+          Button { Layout.preferredHeight: 34; Layout.minimumHeight: 34; Layout.maximumHeight: 34; objectName: "switchProjectButton"; text: qsTr("Switch project…"); flat: true; enabled: !backend.showBusy && !backend.showCapturing && !backend.selecting; onClicked: backend.chooseProject() }
           Repeater {
             model: [qsTr("Overview"), qsTr("Ask project"), qsTr("Project wiki"), qsTr("Conversations"), qsTr("Search"), qsTr("Project files"), qsTr("Context"), qsTr("Connections")]
             delegate: Rectangle {
@@ -136,9 +136,9 @@ ApplicationWindow {
             Caption { text: win.setup ? qsTr("LET’S GET YOU CONNECTED") : qsTr("PROJECT MEMORY") }
             Label { text: win.setup ? qsTr("Give your project a memory.") : [qsTr("Pick up where you left off."), qsTr("Your project wiki"), qsTr("Saved conversations"), qsTr("Find something you remember."), qsTr("Connections"), "", qsTr("Ask your project"), qsTr("Your project files"), qsTr("Context & delivery")][win.page]; color: win.ink; font.pixelSize: 26; Layout.fillWidth: true; wrapMode: Text.Wrap }
           }
-          Button { text: backend.capturing ? qsTr("Capturing…") : qsTr("Capture now"); enabled: ready && !backend.capturing && !backend.busy; visible: !win.setup; onClicked: backend.sync() }
-          ComboBox { id: provider; model: ["Claude Code", "Codex"]; currentIndex: backend.learningProvider === "claude" ? 0 : 1; implicitWidth: 166; enabled: !backend.busy; visible: !win.setup; onActivated: backend.learningProvider = currentIndex === 0 ? "claude" : "codex" }
-          PrimaryButton { text: backend.busy ? qsTr("Cancel") : qsTr("Build wiki"); enabled: ready && (backend.busy || (backend.stats.pending > 0 && win.toolReady(backend.learningProvider))); visible: !win.setup; onClicked: backend.busy ? backend.cancel() : backend.learn(backend.learningProvider) }
+          Button { text: backend.showCapturing ? qsTr("Capturing…") : qsTr("Capture now"); enabled: ready && !backend.showCapturing && !backend.showBusy; visible: !win.setup; onClicked: backend.sync() }
+          ComboBox { id: provider; model: ["Claude Code", "Codex"]; currentIndex: backend.learningProvider === "claude" ? 0 : 1; implicitWidth: 166; enabled: !backend.showBusy; visible: !win.setup; onActivated: backend.learningProvider = currentIndex === 0 ? "claude" : "codex" }
+          PrimaryButton { text: backend.showBusy ? qsTr("Cancel") : qsTr("Build wiki"); enabled: ready && (backend.showBusy || (backend.stats.pending > 0 && win.toolReady(backend.learningProvider))); visible: !win.setup; onClicked: backend.showBusy ? backend.cancel() : backend.learn(backend.learningProvider) }
         }
         Line {}
         Rectangle {
@@ -252,7 +252,7 @@ ApplicationWindow {
                     Caption { text: qsTr("1 / CHOOSE A PROJECT") }
                     RowLayout { Layout.fillWidth: true
                       Label { text: backend.selectedProject.length > 0 ? qsTr("Project folder selected") : qsTr("Which project should Lore remember?"); color: win.ink; font.pixelSize: 18; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                      PrimaryButton { objectName: "chooseProjectButton"; text: backend.selecting ? qsTr("Choosing…") : backend.selectedProject.length > 0 ? qsTr("Change folder…") : qsTr("Choose folder…"); enabled: !backend.selecting && !backend.busy && !backend.capturing; onClicked: backend.chooseProject() }
+                      PrimaryButton { objectName: "chooseProjectButton"; text: backend.selecting ? qsTr("Choosing…") : backend.selectedProject.length > 0 ? qsTr("Change folder…") : qsTr("Choose folder…"); enabled: !backend.selecting && !backend.showBusy && !backend.showCapturing; onClicked: backend.chooseProject() }
                     }
                     Body { text: backend.selectedProject || qsTr("Select the folder that contains your project’s code or documents.") }
                     Button { id: manualToggle; text: qsTr("Enter a folder path instead"); flat: true; checkable: true; font.pixelSize: 11 }
@@ -297,12 +297,12 @@ ApplicationWindow {
                     Body { text: qsTr("Find related ideas even when wording differs. Install and open Ollama, then download the local embedding model (about 622 MB). Project text stays on this computer for embeddings.") }
                     Body { text: backend.semantic.enabled ? qsTr("Enabled · %1 excerpts indexed. New captures and memory changes update the index automatically.").arg(backend.semantic.indexed || 0) : qsTr("Off · keyword search works without a model.") }
                     Body { visible: !!backend.semantic.enabled && !!backend.semantic.needsUpdate; text: qsTr("New evidence is waiting to be indexed. Choose Update index to catch up now.") }
-                    ProgressBar { visible: backend.busy; indeterminate: true; Layout.fillWidth: true }
+                    ProgressBar { visible: backend.showBusy; indeterminate: true; Layout.fillWidth: true }
                     Flow { Layout.fillWidth: true; Layout.preferredHeight: childrenRect.height; spacing: 6
                       Button { text: qsTr("Install Ollama"); onClicked: backend.installSemanticRuntime() }
-                      Button { objectName: "enableSemanticButton"; text: qsTr("Download model & enable"); enabled: backend.connected && !backend.busy && !backend.capturing; onClicked: backend.updateSemantic(true) }
-                      Button { text: qsTr("Update index"); enabled: backend.connected && !backend.busy && !backend.capturing; onClicked: backend.updateSemantic(false) }
-                      Button { text: qsTr("Turn off"); enabled: !!backend.semantic.enabled && !backend.busy; onClicked: backend.disableSemantic() }
+                      Button { objectName: "enableSemanticButton"; text: qsTr("Download model & enable"); enabled: backend.connected && !backend.showBusy && !backend.showCapturing; onClicked: backend.updateSemantic(true) }
+                      Button { text: qsTr("Update index"); enabled: backend.connected && !backend.showBusy && !backend.showCapturing; onClicked: backend.updateSemantic(false) }
+                      Button { text: qsTr("Turn off"); enabled: !!backend.semantic.enabled && !backend.showBusy; onClicked: backend.disableSemantic() }
                     }
                     Body { text: qsTr("If Ollama is unavailable, search uses keywords and reports the fallback. Answers and wiki learning still use your selected coding tool.") }
                   }
@@ -320,7 +320,7 @@ ApplicationWindow {
             Line {}
             RowLayout { Layout.fillWidth: true
               Body { text: backend.connected ? qsTr("This project is connected. You can start a new coding session.") : qsTr("Connect once. Lore will remember this project next time.") }
-              PrimaryButton { objectName: "connectProjectButton"; text: backend.connected ? qsTr("Done") : qsTr("Connect project"); enabled: backend.selectedProject.length > 0 && !backend.busy && !backend.capturing; onClicked: { if (backend.connected || backend.connectProject()) { win.page = 0; win.document = "" } } }
+              PrimaryButton { objectName: "connectProjectButton"; text: backend.connected ? qsTr("Done") : qsTr("Connect project"); enabled: backend.selectedProject.length > 0 && !backend.showBusy && !backend.showCapturing; onClicked: { if (backend.connected || backend.connectProject()) { win.page = 0; win.document = "" } } }
             }
           }
           ColumnLayout {

@@ -9,7 +9,7 @@ ColumnLayout {
   spacing: 12
   Label { text: qsTr("Index code and documents to connect memory to files. Git ignore rules are respected; common secrets and generated folders are excluded. Review your files before using Ask: selected excerpts may be sent to your coding tool."); color: "#9aa69b"; wrapMode: Text.Wrap; Layout.fillWidth: true }
   RowLayout {
-    Button { Material.roundedScale: theme.radius; objectName: "indexProjectButton"; text: backend.files.length ? qsTr("Refresh file index") : qsTr("Index project files"); enabled: !backend.busy && !backend.capturing; onClicked: backend.indexProject() }
+    Button { Material.roundedScale: theme.radius; objectName: "indexProjectButton"; text: backend.files.length ? qsTr("Refresh file index") : qsTr("Index project files"); enabled: !backend.showBusy && !backend.showCapturing; onClicked: backend.indexProject() }
     Label { text: qsTr("%1 files · Last indexed: %2").arg(backend.files.length).arg(backend.stats.indexedAt || qsTr("Never")); color: "#9aa69b"; wrapMode: Text.Wrap; Layout.fillWidth: true }
   }
   Label { text: qsTr("After the first index, Lore checks for changes each minute while capture is on. A changed file flags related memories for review; it does not prove a decision is wrong."); color: "#9aa69b"; wrapMode: Text.Wrap; Layout.fillWidth: true }

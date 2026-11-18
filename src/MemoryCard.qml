@@ -21,10 +21,10 @@ Rectangle {
     Label { visible: entry.files.length > 0; text: entry.files.join(" · "); color: "#9aa69b"; wrapMode: Text.Wrap; Layout.fillWidth: true; font.pixelSize: 11 }
     Flow { Layout.fillWidth: true; Layout.preferredHeight: childrenRect.height; spacing: 6
       Button { Material.roundedScale: theme.radius; text: qsTr("Evidence"); onClicked: root.read(entry.title,backend.readPage(".lore/wiki/" + entry.id + ".md")) }
-      Button { Material.roundedScale: theme.radius; text: qsTr("Confirm"); enabled: !backend.busy && !backend.capturing && entry.supersededBy === 0 && entry.review !== "forgotten"; onClicked: backend.reviewMemory(entry.id,"confirmed") }
-      Button { Material.roundedScale: theme.radius; text: qsTr("Correct"); enabled: !backend.busy && !backend.capturing && entry.supersededBy === 0 && entry.review !== "forgotten"; onClicked: { correction.text=entry.body; correctionDialog.open() } }
-      Button { Material.roundedScale: theme.radius; text: qsTr("Outdated"); enabled: !backend.busy && !backend.capturing && entry.review !== "forgotten"; onClicked: backend.reviewMemory(entry.id,"outdated") }
-      Button { Material.roundedScale: theme.radius; text: qsTr("Forget"); enabled: !backend.busy && !backend.capturing && entry.review !== "forgotten"; onClicked: forgetDialog.open() }
+      Button { Material.roundedScale: theme.radius; text: qsTr("Confirm"); enabled: !backend.showBusy && !backend.showCapturing && entry.supersededBy === 0 && entry.review !== "forgotten"; onClicked: backend.reviewMemory(entry.id,"confirmed") }
+      Button { Material.roundedScale: theme.radius; text: qsTr("Correct"); enabled: !backend.showBusy && !backend.showCapturing && entry.supersededBy === 0 && entry.review !== "forgotten"; onClicked: { correction.text=entry.body; correctionDialog.open() } }
+      Button { Material.roundedScale: theme.radius; text: qsTr("Outdated"); enabled: !backend.showBusy && !backend.showCapturing && entry.review !== "forgotten"; onClicked: backend.reviewMemory(entry.id,"outdated") }
+      Button { Material.roundedScale: theme.radius; text: qsTr("Forget"); enabled: !backend.showBusy && !backend.showCapturing && entry.review !== "forgotten"; onClicked: forgetDialog.open() }
     }
   }
   Dialog { id: correctionDialog; anchors.centerIn: Overlay.overlay; parent: Overlay.overlay; width: Math.min(540,Overlay.overlay.width-40); modal: true; title: qsTr("Correct this memory"); standardButtons: Dialog.Save | Dialog.Cancel

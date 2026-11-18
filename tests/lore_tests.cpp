@@ -385,6 +385,15 @@ private slots:
     QSignalSpy finished(&backend,&Backend::learningFinished); backend.ask("How does authentication work?"); QTRY_COMPARE_WITH_TIMEOUT(finished.size(),1,10000); QVERIFY2(finished.first().first().toBool(),qPrintable(backend.status())); QVERIFY(!backend.answer().value("refs").toList().isEmpty());
     backend.ask("xyzunrelatedunknown"); QTRY_COMPARE_WITH_TIMEOUT(finished.size(),2,10000); QVERIFY(backend.answer().value("insufficient").toBool());
   }
+  void backgroundCaptureDoesNotFlashControls() {
+    QTemporaryDir p, logs; { Store store(p.path(),true); store.render(); }
+    Backend backend(nullptr,nullptr,{}, {logs.path(),logs.path()}); QVERIFY(backend.openProject(p.path())); QTRY_VERIFY(!backend.capturing());
+    bool sawBackground=false, shown=false;
+    connect(&backend,&Backend::statusChanged,&backend,[&] { if(backend.capturing()) { sawBackground=true; if(backend.showCapturing() || backend.showBusy()) shown=true; } });
+    backend.setWatching(true); QTRY_VERIFY_WITH_TIMEOUT(sawBackground,8000); QTRY_VERIFY(!backend.capturing()); QVERIFY(!shown);
+    backend.setWatching(false);
+    backend.sync(); QVERIFY(backend.capturing()); QVERIFY(backend.showCapturing()); QTRY_VERIFY(!backend.capturing()); QVERIFY(!backend.showCapturing());
+  }
   void guidedConnectionRemembersTheProjectAndSettings() {
     QTemporaryDir p, data, logs;
     const QString preferences = data.filePath("preferences.json");
