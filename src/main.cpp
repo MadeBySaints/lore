@@ -13,7 +13,12 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QTextStream>
+#include <QStandardPaths>
+#include <QIcon>
 #include <cstdio>
+#ifdef Q_OS_WIN
+#include <shobjidl.h>
+#endif
 
 static void output(const QJsonValue &v) {
   QTextStream out(stdout);
@@ -71,7 +76,11 @@ int main(int argc, char **argv) {
   }
   if (command != "open" || informational) { qputenv("QT_QPA_PLATFORM", "offscreen"); qputenv("QT_QPA_PLATFORMTHEME", "generic"); }
   QGuiApplication app(argc, argv);
-  app.setApplicationName("lore"); app.setApplicationVersion("0.1.0"); app.setDesktopFileName("lore");
+  app.setApplicationName("lore"); app.setApplicationVersion("0.2.0"); app.setDesktopFileName("lore");
+  app.setWindowIcon(QIcon(":/lore.svg"));
+#ifdef Q_OS_WIN
+  SetCurrentProcessExplicitAppUserModelID(L"MadeBySaints.Lore");
+#endif
   QCommandLineParser parser;
   parser.setApplicationDescription("Local project memory for Claude Code and Codex.\nCommands: open, init, connect, sync, watch, import, search, status, context, learn, hook, mcp, skill install");
   parser.addHelpOption(); parser.addVersionOption(); parser.addPositionalArgument("command", "Command to run", "[command]");
@@ -80,8 +89,11 @@ int main(int argc, char **argv) {
   try {
     if (command == "open") {
       QQuickStyle::setStyle("Material"); Translator translator(qEnvironmentVariable("LORE_LANGUAGE_FILE")); app.installTranslator(&translator);
-      Theme theme(qEnvironmentVariable("LORE_THEME_DIRECTORY")); Backend backend;
-      if (QFileInfo::exists(parser.value("project") + "/.lore/brain.sqlite")) backend.openProject(parser.value("project"));
+      Theme theme(qEnvironmentVariable("LORE_THEME_DIRECTORY"));
+      const QString preferences = qEnvironmentVariable("LORE_PREFERENCES_FILE", QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/preferences.json");
+      Backend backend(nullptr, nullptr, preferences);
+      if (parser.isSet("project")) backend.selectProject(parser.value("project"));
+      if (!qEnvironmentVariableIsSet("LORE_SKIP_TOOL_CHECKS")) QTimer::singleShot(0, backend.tools(), &Toolbox::check);
       QQmlApplicationEngine engine;
       QObject::connect(&translator,&Translator::changed,&engine,&QQmlEngine::retranslate);
       engine.rootContext()->setContextProperty("backend",&backend); engine.rootContext()->setContextProperty("theme",&theme); engine.rootContext()->setContextProperty("translator",&translator);

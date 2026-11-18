@@ -1,31 +1,37 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 ApplicationWindow {
   id: win
-  width: 1280; height: 840
-  minimumWidth: 960; minimumHeight: 650
+  width: 1180; height: 800
+  minimumWidth: 860; minimumHeight: 620
   visible: true
   title: qsTr("Lore · Project memory")
-  color: "#101211"
+  color: "#101411"
   Material.theme: Material.Dark
   Material.accent: theme.accent
   Material.roundedScale: theme.radius
   palette.link: theme.accent
-  palette.linkVisited: theme.accent
   property int page: 0
   property string document: ""
   property string documentTitle: ""
   property bool helpVisible: false
-  readonly property color ink: "#e7e9e4"
-  readonly property color muted: "#8a938c"
-  readonly property color edge: "#2b312c"
+  readonly property color ink: "#e8ede5"
+  readonly property color muted: "#9aa69b"
+  readonly property color edge: "#303a31"
   readonly property bool ready: backend.project.length > 0
+  readonly property bool setup: !backend.connected || page === 4
+  readonly property bool typing: searchField.activeFocus || manualPath.activeFocus
   readonly property string language: translator.language
+  readonly property var toolEntries: backend.tools.entries
+  readonly property var nextSteps: backend.memories.filter(function(entry) { return entry.kind === "next" && entry.supersededBy === 0 })
 
   function showDocument(title, text) { documentTitle = title; document = text }
+  function toolAvailable(id) { return win.toolEntries.some(function(tool) { return tool.id === id && tool.available }) }
+  function toolReady(id) { return win.toolEntries.some(function(tool) { return tool.id === id && tool.state === "ready" }) }
   function follow(link) {
     let path = link.toString().split("#")[0]
     if (path.startsWith(".lore/")) showDocument(path, backend.readPage(path))
@@ -33,25 +39,50 @@ ApplicationWindow {
     else if (/^[0-9]+\.md$/.test(path)) showDocument(qsTr("Wiki page"), backend.readPage(".lore/wiki/" + path))
     else if (/^[a-f0-9]+\.md$/.test(path)) showDocument(qsTr("Conversation"), backend.readPage(".lore/sources/" + path))
   }
-  Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; onActivated: win.helpVisible = !win.helpVisible }
-  Shortcut { sequence: "Q"; enabled: !projectPath.activeFocus && !searchField.activeFocus; context: Qt.ApplicationShortcut; onActivated: backend.busy ? quitDialog.open() : Qt.quit() }
-  Shortcut { sequence: "Space"; enabled: !projectPath.activeFocus && !searchField.activeFocus && ready; context: Qt.ApplicationShortcut; onActivated: backend.sync() }
+  Shortcut { sequence: "?"; enabled: !win.typing; context: Qt.ApplicationShortcut; onActivated: win.helpVisible = !win.helpVisible }
+  Shortcut { sequence: "Q"; enabled: !win.typing; context: Qt.ApplicationShortcut; onActivated: backend.busy ? quitDialog.open() : Qt.quit() }
+  Shortcut { sequence: "Space"; enabled: !win.typing && ready; context: Qt.ApplicationShortcut; onActivated: backend.sync() }
   Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; onActivated: { win.page = 3; searchField.forceActiveFocus() } }
+  Shortcut { sequence: "Ctrl+O"; context: Qt.ApplicationShortcut; onActivated: backend.chooseProject() }
+  Shortcut { sequence: "F11"; context: Qt.ApplicationShortcut; onActivated: win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen() }
   Shortcut { sequence: "Escape"; context: Qt.ApplicationShortcut; onActivated: { win.document = ""; win.helpVisible = false } }
   onClosing: function(close) { if (backend.busy) { close.accepted = false; quitDialog.open() } }
 
-  component Caption: Label { color: win.muted; font.pixelSize: 11; font.letterSpacing: 1.4 }
-  component Hairline: Rectangle { color: win.edge; Layout.fillWidth: true; implicitHeight: 1 }
-  component StatCard: Rectangle {
+  component Caption: Label { color: win.muted; font.pixelSize: 11; font.letterSpacing: 1.2 }
+  component Line: Rectangle { color: win.edge; Layout.fillWidth: true; implicitHeight: 1 }
+  component Card: Rectangle { color: "#192019"; border.color: win.edge; radius: theme.radius; Layout.fillWidth: true }
+  component Stat: Card {
     property string caption
     property string value
-    Layout.fillWidth: true; implicitHeight: 104
-    color: "#191d19"; border.color: win.edge; radius: theme.radius
-    Column { anchors.fill: parent; anchors.margins: 18; spacing: 8
+    implicitHeight: 98
+    Column { anchors.fill: parent; anchors.margins: 18; spacing: 10
       Caption { text: caption }
-      Label { text: value; color: win.ink; font.pixelSize: 28; font.family: "JetBrains Mono" }
+      Label { text: value; color: win.ink; font.pixelSize: 27 }
     }
   }
+  component Body: Label { color: win.muted; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true }
+  component PrimaryButton: Button {
+    id: primary
+    font.pixelSize: 13
+    leftPadding: 16; rightPadding: 16; topPadding: 12; bottomPadding: 12
+    background: Rectangle { implicitWidth: 110; implicitHeight: 42; radius: theme.radius; color: !primary.enabled ? "#2b352d" : primary.down ? Qt.darker(theme.accent, 1.15) : theme.accent }
+    contentItem: Label { text: primary.text; font: primary.font; color: primary.enabled ? theme.accentForeground : win.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+  }
+  component ToolRow: ColumnLayout {
+    property var entry
+    Layout.fillWidth: true; spacing: 6
+    RowLayout {
+      Layout.fillWidth: true
+      Rectangle { width: 8; height: 8; radius: 4; color: entry.state === "ready" ? theme.accent : entry.state === "missing" ? "#bd9971" : win.muted }
+      Label { text: entry.name; color: win.ink; font.pixelSize: 16; font.bold: true; Layout.fillWidth: true }
+      RadioButton { text: qsTr("Use for learning"); checked: backend.learningProvider === entry.id; enabled: entry.available && !backend.busy; onClicked: backend.learningProvider = entry.id }
+      Button { text: qsTr("Install"); visible: !entry.available; onClicked: backend.tools.install(entry.id) }
+      Button { text: qsTr("Sign in"); visible: entry.available && entry.state !== "ready"; enabled: !backend.tools.checking; onClicked: backend.tools.signIn(entry.id) }
+      Button { text: qsTr("Locate…"); flat: true; enabled: !backend.selecting && !backend.tools.checking; onClicked: backend.locateTool(entry.id) }
+    }
+    Body { text: entry.detail }
+  }
+
   Item {
     anchors.fill: parent
     LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
@@ -59,162 +90,207 @@ ApplicationWindow {
     RowLayout {
       anchors.fill: parent; spacing: 0
       Rectangle {
-        Layout.preferredWidth: 228; Layout.fillHeight: true; color: "#151815"
+        Layout.preferredWidth: 192; Layout.fillHeight: true; color: "#151b16"
         ColumnLayout {
-          anchors.fill: parent; anchors.margins: 22; spacing: 12
+          anchors.fill: parent; anchors.margins: 20; spacing: 12
           RowLayout {
-            spacing: 10
             Rectangle { width: 30; height: 34; color: theme.accent; radius: theme.radius
               Label { anchors.centerIn: parent; text: "L"; color: theme.accentForeground; font.bold: true; font.pixelSize: 25 }
             }
-            Label { text: "lore"; color: win.ink; font.pixelSize: 29; font.letterSpacing: -1 }
+            Label { text: "lore"; color: win.ink; font.pixelSize: 29 }
           }
-          Label { text: qsTr("A memory for your work."); color: win.muted; font.pixelSize: 12; Layout.bottomMargin: 28 }
+          Body { text: qsTr("Your project, remembered."); font.pixelSize: 11; Layout.bottomMargin: 16 }
           Caption { text: qsTr("PROJECT") }
-          Label { text: ready ? backend.stats.name : qsTr("No project connected"); color: win.ink; font.pixelSize: 14; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
-          Label { text: backend.project; color: win.muted; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideMiddle; Layout.bottomMargin: 18 }
+          Label { text: ready ? backend.stats.name : qsTr("Choose a project"); color: win.ink; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
+          Button { objectName: "switchProjectButton"; text: qsTr("Switch project…"); flat: true; enabled: !backend.busy && !backend.capturing && !backend.selecting; onClicked: backend.chooseProject() }
           Repeater {
-            model: [qsTr("Entry point"), qsTr("Project wiki"), qsTr("Conversations"), qsTr("Search memory"), qsTr("Connections")]
+            model: [qsTr("Overview"), qsTr("Project wiki"), qsTr("Conversations"), qsTr("Search"), qsTr("Connections")]
             delegate: Rectangle {
               required property int index
               required property string modelData
-              Layout.fillWidth: true; implicitHeight: 43
-              color: win.page === index ? "#283026" : navMouse.containsMouse ? "#1f251f" : "transparent"
-              radius: theme.radius
-              Rectangle { width: 2; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; color: theme.accent; visible: win.page === index }
-              Row { anchors.verticalCenter: parent.verticalCenter; x: 14; spacing: 12
-                Label { text: (index + 1).toString().padStart(2, "0"); font.family: "JetBrains Mono"; font.pixelSize: 11; color: win.page === index ? theme.accent : win.muted }
-                Label { text: modelData; font.pixelSize: 13; color: win.page === index ? win.ink : win.muted }
-              }
-              MouseArea { id: navMouse; anchors.fill: parent; hoverEnabled: true; onClicked: { win.page = index; win.document = "" } }
+              objectName: "nav" + index
+              Layout.fillWidth: true; implicitHeight: 43; radius: theme.radius
+              color: (win.setup && index === 4) || (!win.setup && win.page === index) ? "#2b3828" : navMouse.containsMouse ? "#202a20" : "transparent"
+              Label { anchors.verticalCenter: parent.verticalCenter; x: 12; text: modelData; color: win.ink; font.pixelSize: 13; opacity: ready || index === 4 ? 1 : 0.45 }
+              MouseArea { id: navMouse; anchors.fill: parent; hoverEnabled: true; enabled: ready || index === 4; onClicked: { win.page = index; win.document = "" } }
             }
           }
           Item { Layout.fillHeight: true }
-          Hairline {}
+          Line {}
           RowLayout {
-            Rectangle { width: 6; height: 6; radius: 3; color: backend.watching ? theme.accent : win.muted }
-            Label { text: backend.watching ? qsTr("Capture is running") : qsTr("Capture is paused"); color: win.muted; font.pixelSize: 11 }
+            Rectangle { width: 7; height: 7; radius: 4; color: backend.watching ? theme.accent : win.muted }
+            Label { text: backend.watching ? qsTr("Capture is on") : qsTr("Capture is paused"); color: win.muted; font.pixelSize: 11 }
           }
-          Label { text: qsTr("Local storage · Your project"); color: win.muted; font.pixelSize: 10 }
-          Button { text: qsTr("Keyboard shortcuts  ?"); flat: true; font.pixelSize: 11; onClicked: win.helpVisible = true }
+          Body { text: backend.autoLearning ? qsTr("Wiki updates automatically") : qsTr("Wiki updates when you choose"); font.pixelSize: 10 }
+          Button { text: qsTr("Help & shortcuts"); flat: true; font.pixelSize: 11; onClicked: win.helpVisible = true }
         }
       }
       Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: win.edge }
       ColumnLayout {
         Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
         RowLayout {
-          Layout.fillWidth: true; Layout.margins: 30; Layout.bottomMargin: 20; spacing: 10
+          Layout.fillWidth: true; Layout.margins: 26; spacing: 12
           ColumnLayout {
-            Layout.fillWidth: true; spacing: 7
-            Caption { text: qsTr("PROJECT INTELLIGENCE / %1").arg([qsTr("OVERVIEW"), qsTr("KNOWLEDGE"), qsTr("ARCHIVE"), qsTr("RECALL"), qsTr("SETUP")][win.page]) }
-            Label { text: [qsTr("Start with what you know."), qsTr("Knowledge that accumulates."), qsTr("Every conversation, connected."), qsTr("Find the thread."), qsTr("Connect your coding tools.")][win.page]; color: win.ink; font.pixelSize: 27; font.letterSpacing: -0.7; Layout.fillWidth: true; wrapMode: Text.Wrap }
+            Layout.fillWidth: true; spacing: 6
+            Caption { text: win.setup ? qsTr("LET’S GET YOU CONNECTED") : qsTr("PROJECT MEMORY") }
+            Label { text: win.setup ? qsTr("Give your project a memory.") : [qsTr("Pick up where you left off."), qsTr("Your project wiki"), qsTr("Saved conversations"), qsTr("Find something you remember."), qsTr("Connections")][win.page]; color: win.ink; font.pixelSize: 26; Layout.fillWidth: true; wrapMode: Text.Wrap }
           }
-          Button { text: qsTr("Capture now"); enabled: ready; onClicked: backend.sync() }
-          ComboBox { id: provider; model: ["Codex", "Claude"]; implicitWidth: 112; enabled: !backend.busy; onCurrentIndexChanged: backend.learningProvider = currentIndex === 0 ? "codex" : "claude" }
-          Button { text: backend.busy ? qsTr("Cancel") : qsTr("Learn"); enabled: ready; highlighted: !backend.busy; onClicked: backend.busy ? backend.cancel() : backend.learn(provider.currentIndex === 0 ? "codex" : "claude") }
+          Button { text: backend.capturing ? qsTr("Capturing…") : qsTr("Capture now"); enabled: ready && !backend.capturing; visible: !win.setup; onClicked: backend.sync() }
+          ComboBox { id: provider; model: ["Claude Code", "Codex"]; currentIndex: backend.learningProvider === "claude" ? 0 : 1; implicitWidth: 166; enabled: !backend.busy; visible: !win.setup; onActivated: backend.learningProvider = currentIndex === 0 ? "claude" : "codex" }
+          PrimaryButton { text: backend.busy ? qsTr("Cancel learning") : qsTr("Build wiki"); enabled: ready && (backend.busy || (backend.stats.pending > 0 && win.toolReady(backend.learningProvider))); visible: !win.setup; onClicked: backend.busy ? backend.cancel() : backend.learn(backend.learningProvider) }
         }
-        ColumnLayout {
-          Layout.fillWidth: true; Layout.leftMargin: 30; Layout.rightMargin: 30; spacing: 10
-          RowLayout {
-            Layout.fillWidth: true; spacing: 12
-            TextField { id: projectPath; Layout.fillWidth: true; text: initialProject; placeholderText: qsTr("Project folder, e.g. /home/you/Work/my-project"); onAccepted: backend.openProject(text, false); selectByMouse: true }
-            Button { text: qsTr("Open"); enabled: !backend.busy; onClicked: { if (backend.openProject(projectPath.text, false)) win.document = "" } }
-            Button { text: qsTr("Initialize"); enabled: !backend.busy; onClicked: { if (backend.openProject(projectPath.text, true)) win.document = "" } }
+        Line {}
+        Rectangle {
+          Layout.fillWidth: true; implicitHeight: errorRow.implicitHeight + 24; visible: backend.error.length > 0; color: "#38241f"
+          RowLayout { id: errorRow; anchors.fill: parent; anchors.margins: 12
+            Label { text: backend.error; color: "#f0c7b5"; wrapMode: Text.Wrap; Layout.fillWidth: true; font.pixelSize: 12 }
+            Button { text: qsTr("Dismiss"); flat: true; onClicked: backend.clearError() }
           }
-          Hairline {}
         }
         StackLayout {
-          Layout.fillWidth: true; Layout.fillHeight: true; Layout.margins: 30; Layout.topMargin: 18
-          currentIndex: win.document.length > 0 ? 5 : win.page
-          ColumnLayout {
-            spacing: 20
-            RowLayout {
-              Layout.fillWidth: true; spacing: 12
-              StatCard { caption: qsTr("CONVERSATIONS"); value: ready ? (win.language, backend.stats.sources.toLocaleString(Qt.locale(), 'f', 0)) : "—" }
-              StatCard { caption: qsTr("CAPTURED RECORDS"); value: ready ? (win.language, backend.stats.events.toLocaleString(Qt.locale(), 'f', 0)) : "—" }
-              StatCard { caption: qsTr("WIKI ENTRIES"); value: ready ? (win.language, backend.stats.memories.toLocaleString(Qt.locale(), 'f', 0)) : "—" }
-            }
-            RowLayout { Layout.fillWidth: true
-              Caption { text: qsTr("BRAIN.md / ALWAYS READ FIRST"); Layout.fillWidth: true }
-              Button { text: qsTr("Open folder"); flat: true; enabled: ready; onClicked: backend.reveal() }
-            }
-            Rectangle {
-              Layout.fillWidth: true; Layout.fillHeight: true; color: "#161a16"; border.color: win.edge; radius: theme.radius
-              ScrollView { anchors.fill: parent; anchors.margins: 20; clip: true
-                TextArea { readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; color: win.ink; font.pixelSize: 14; textFormat: TextEdit.RichText; text: backend.markdown(ready ? backend.brain : qsTr("# Give your project a memory\n\nEnter a project folder above and choose Initialize.\n\nLore captures Claude Code and Codex session logs, keeps the original evidence, and turns what you learn into a linked project wiki.\n\nBRAIN.md is the small entry file future sessions read first."), theme.accent); background: null; onLinkActivated: function(link) { win.follow(link) } }
+          Layout.fillWidth: true; Layout.fillHeight: true; Layout.margins: 26; Layout.topMargin: 18
+          currentIndex: win.document.length > 0 ? 5 : win.setup ? 4 : win.page
+          ScrollView {
+            clip: true; contentWidth: availableWidth
+            ColumnLayout { width: parent.width; spacing: 18
+              Card { implicitHeight: connectedContent.implicitHeight + 36
+                ColumnLayout { id: connectedContent; anchors.fill: parent; anchors.margins: 18; spacing: 12
+                  Caption { text: qsTr("CONNECTED · READY FOR YOUR NEXT SESSION"); color: theme.accent }
+                  Label { text: backend.stats.name || ""; color: win.ink; font.pixelSize: 23; font.bold: true }
+                  Body { text: qsTr("Start a new coding session in this project. Lore will save the conversation and make it available next time.") }
+                  Button { text: qsTr("Set up learning in Connections"); visible: !win.toolReady(backend.learningProvider); flat: true; onClicked: win.page = 4 }
+                  RowLayout {
+                    PrimaryButton { objectName: "startClaudeButton"; text: qsTr("Start Claude Code"); enabled: win.toolAvailable("claude"); onClicked: backend.tools.startSession("claude", backend.project) }
+                    Button { text: qsTr("Start Codex"); enabled: win.toolAvailable("codex"); onClicked: backend.tools.startSession("codex", backend.project) }
+                    Button { text: qsTr("Open project folder"); flat: true; onClicked: backend.reveal() }
+                  }
+                }
               }
+              RowLayout { Layout.fillWidth: true; spacing: 12
+                Stat { caption: qsTr("CONVERSATIONS"); value: ready ? (win.language, backend.stats.sources.toLocaleString(Qt.locale(), 'f', 0)) : "0" }
+                Stat { caption: qsTr("SAVED RECORDS"); value: ready ? (win.language, backend.stats.events.toLocaleString(Qt.locale(), 'f', 0)) : "0" }
+                Stat { caption: qsTr("WIKI ENTRIES"); value: ready ? (win.language, backend.stats.memories.toLocaleString(Qt.locale(), 'f', 0)) : "0" }
+              }
+              Card { implicitHeight: nextContent.implicitHeight + 36
+                ColumnLayout { id: nextContent; anchors.fill: parent; anchors.margins: 18; spacing: 12
+                  Label { text: qsTr("What’s next"); color: win.ink; font.pixelSize: 18 }
+                  Repeater { model: win.nextSteps.slice(0, 5)
+                    delegate: RowLayout { required property var modelData; Layout.fillWidth: true
+                      Label { text: modelData.title; color: win.ink; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                      Button { text: qsTr("Open"); onClicked: win.showDocument(modelData.title, backend.readPage(".lore/wiki/" + modelData.id + ".md")) }
+                    }
+                  }
+                  Body { visible: win.nextSteps.length === 0; text: backend.stats.pending > 0 ? qsTr("You have new messages ready to learn from. Choose Build wiki to extract decisions and next steps.") : qsTr("Your next steps will appear here after your first conversation and wiki update.") }
+                  Button { text: qsTr("Read the project entry point"); flat: true; enabled: ready; onClicked: win.showDocument("BRAIN.md", backend.brain) }
+                }
+              }
+              Body { text: qsTr("Claude capture works even when Lore is closed. Keep Lore open to capture Codex sessions and run automatic wiki updates.") }
             }
           }
           ColumnLayout {
             spacing: 14
-            Label { text: qsTr("Dated facts, decisions, questions, and next steps. Each page links to its evidence."); color: win.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Body { text: qsTr("Facts, decisions, questions, and next steps. Open a page to see its original evidence.") }
             ListView { Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 10; model: backend.memories
-              delegate: Rectangle {
+              delegate: Card {
                 required property var modelData
-                width: ListView.view.width; height: memoryColumn.implicitHeight + 32; color: "#191d19"; border.color: win.edge; radius: theme.radius
+                width: ListView.view.width; height: memoryColumn.implicitHeight + 32
                 Column { id: memoryColumn; x: 18; y: 16; width: parent.width - 36; spacing: 9
-                  Caption { text: modelData.kind.toUpperCase() + "  /  " + modelData.time.substring(0, 10) + (modelData.supersededBy > 0 ? " / " + qsTr("SUPERSEDED") : ""); color: modelData.supersededBy > 0 ? win.muted : theme.accent }
+                  Caption { text: modelData.kind.toUpperCase() + (modelData.supersededBy > 0 ? " / " + qsTr("SUPERSEDED") : ""); color: theme.accent }
                   Label { text: modelData.title; color: win.ink; font.pixelSize: 17; width: parent.width; wrapMode: Text.Wrap }
                   Label { text: modelData.body; color: win.muted; font.pixelSize: 13; width: parent.width; maximumLineCount: 3; elide: Text.ElideRight; wrapMode: Text.Wrap }
                 }
                 MouseArea { anchors.fill: parent; onClicked: win.showDocument(modelData.title, backend.readPage(".lore/wiki/" + modelData.id + ".md")) }
               }
-              Label { anchors.centerIn: parent; visible: backend.memories.length === 0; text: qsTr("Capture a conversation, then choose Learn to build your wiki."); color: win.muted; width: parent.width - 40; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
+              Label { anchors.centerIn: parent; visible: backend.memories.length === 0; text: qsTr("Capture a conversation, then choose Build wiki."); color: win.muted; width: parent.width - 40; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
             }
-            Label { text: qsTr("Learn sends pending messages to the selected provider using your existing login."); color: win.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
           }
           ColumnLayout {
-            Label { text: qsTr("Raw records stay on disk. Repeated imports are deduplicated."); color: win.muted; wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.bottomMargin: 12 }
+            Body { text: qsTr("Your original conversations stay on disk. Repeated captures do not create duplicates.") }
             ListView { Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 10; model: backend.sessions
-              delegate: Rectangle {
+              delegate: Card {
                 required property var modelData
-                width: ListView.view.width; height: 98; color: "#191d19"; border.color: win.edge; radius: theme.radius
+                width: ListView.view.width; height: 94
                 Column { x: 18; y: 16; width: parent.width - 36; spacing: 10
-                  Caption { text: modelData.provider.toUpperCase() + "  /  " + qsTr("%1 records").arg(modelData.count) }
+                  Caption { text: modelData.provider.toUpperCase() + " / " + qsTr("%1 records").arg(modelData.count) }
                   Label { text: modelData.title; color: win.ink; font.pixelSize: 16; width: parent.width; elide: Text.ElideRight }
                   Label { text: modelData.time; color: win.muted; font.pixelSize: 11 }
                 }
                 MouseArea { anchors.fill: parent; onClicked: win.showDocument(modelData.title, backend.readPage(".lore/sources/" + modelData.id + ".md")) }
               }
-              Label { anchors.centerIn: parent; visible: backend.sessions.length === 0; text: qsTr("No conversations captured for this project yet."); color: win.muted }
+              Label { anchors.centerIn: parent; visible: backend.sessions.length === 0; text: qsTr("No conversations yet. Start a new coding session in this project."); color: win.muted; width: parent.width - 40; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
             }
           }
           ColumnLayout {
-            TextField { id: searchField; Layout.fillWidth: true; placeholderText: qsTr("Search decisions, errors, file names, or exact terms…"); selectByMouse: true; onTextChanged: searchTimer.restart() }
+            TextField { id: searchField; objectName: "searchField"; Layout.fillWidth: true; placeholderText: qsTr("Search decisions, errors, file names, or exact terms…"); selectByMouse: true; onTextChanged: searchTimer.restart() }
             Timer { id: searchTimer; interval: 220; onTriggered: backend.search(searchField.text) }
             ListView { Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 10; model: backend.results
-              delegate: Rectangle {
+              delegate: Card {
                 required property var modelData
-                width: ListView.view.width; height: searchColumn.implicitHeight + 32; color: "#191d19"; border.color: win.edge; radius: theme.radius
+                width: ListView.view.width; height: searchColumn.implicitHeight + 32
                 Column { id: searchColumn; x: 18; y: 16; width: parent.width - 36; spacing: 10
                   Caption { text: modelData.provider.toUpperCase() + " / " + modelData.role.toUpperCase(); color: theme.accent }
                   Label { text: modelData.body; color: win.ink; width: parent.width; maximumLineCount: 4; wrapMode: Text.Wrap; elide: Text.ElideRight; font.pixelSize: 13; textFormat: Text.PlainText }
-                  Label { text: modelData.id; color: win.muted; font.family: "JetBrains Mono"; font.pixelSize: 10 }
                 }
                 MouseArea { anchors.fill: parent; onClicked: win.showDocument(modelData.title, backend.readPage(".lore/sources/" + modelData.source + ".md")) }
               }
               Label { anchors.centerIn: parent; visible: backend.results.length === 0; text: qsTr("No matching records."); color: win.muted }
             }
           }
-          ScrollView {
-            clip: true; contentWidth: availableWidth
-            ColumnLayout {
-              width: parent.width; spacing: 20
-              Label { text: qsTr("One project. Two coding tools. A shared memory."); color: win.ink; font.pixelSize: 21; Layout.fillWidth: true; wrapMode: Text.Wrap }
-              Label { text: qsTr("Connect adds a BRAIN.md pointer to AGENTS.md and CLAUDE.md, installs project-local Claude lifecycle hooks, and excludes the private archive from Git. Existing instructions and hooks are preserved."); color: win.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
-              Button { text: qsTr("Connect project"); highlighted: true; enabled: ready; onClicked: backend.connectAgents() }
-              Hairline {}
-              Label { text: qsTr("Automatic capture"); color: win.ink; font.pixelSize: 18 }
-              Label { text: qsTr("Claude hooks capture at prompts, responses, compaction, and session end. For Codex, keep Lore open with capture enabled, or run the watcher below. Only logs belonging to this project are imported."); color: win.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
-              Switch { text: qsTr("Capture session logs every 5 seconds"); checked: backend.watching; enabled: ready; onToggled: backend.watching = checked }
-              Switch { text: qsTr("Learn automatically after 60 seconds without new records"); checked: backend.autoLearning; enabled: ready; onToggled: backend.autoLearning = checked }
-              Label { text: qsTr("Automatic learning sends pending messages to the selected provider and uses its quota. It stays off until you enable it for this project."); color: win.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
-              TextArea { text: "lore watch --project '" + backend.project.replace(/'/g, "'\\''") + "' --json"; readOnly: true; selectByMouse: true; color: theme.accent; font.family: "JetBrains Mono"; font.pixelSize: 12; wrapMode: TextEdit.Wrap; Layout.fillWidth: true }
-              Hairline {}
-              Label { text: qsTr("Agent recall via MCP"); color: win.ink; font.pixelSize: 18 }
-              Label { text: qsTr("The local MCP server exposes brain_context, brain_search, brain_wiki, and brain_sessions to either coding tool. It only reads memory. See the README for registration commands."); color: win.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
-              TextArea { text: "lore mcp --project '" + backend.project.replace(/'/g, "'\\''") + "'"; readOnly: true; selectByMouse: true; color: theme.accent; font.family: "JetBrains Mono"; font.pixelSize: 12; wrapMode: TextEdit.Wrap; Layout.fillWidth: true }
-              Label { text: qsTr("Capture and keyword search are local. Learn uses your chosen model provider. Lore preserves what session logs expose; hidden reasoning and unsaved conversations are unavailable."); color: win.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
+          ColumnLayout {
+            spacing: 12
+            ScrollView {
+              Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
+              ColumnLayout { width: parent.width; spacing: 16
+                Card { implicitHeight: folderContent.implicitHeight + 36
+                  ColumnLayout { id: folderContent; anchors.fill: parent; anchors.margins: 18; spacing: 10
+                    Caption { text: qsTr("1 / CHOOSE A PROJECT") }
+                    RowLayout { Layout.fillWidth: true
+                      Label { text: backend.selectedProject.length > 0 ? qsTr("Project folder selected") : qsTr("Which project should Lore remember?"); color: win.ink; font.pixelSize: 18; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                      PrimaryButton { objectName: "chooseProjectButton"; text: backend.selecting ? qsTr("Choosing…") : backend.selectedProject.length > 0 ? qsTr("Change folder…") : qsTr("Choose folder…"); enabled: !backend.selecting && !backend.busy && !backend.capturing; onClicked: backend.chooseProject() }
+                    }
+                    Body { text: backend.selectedProject || qsTr("Select the folder that contains your project’s code or documents.") }
+                    Button { id: manualToggle; text: qsTr("Enter a folder path instead"); flat: true; checkable: true; font.pixelSize: 11 }
+                    RowLayout { visible: manualToggle.checked; Layout.fillWidth: true
+                      TextField { id: manualPath; Layout.fillWidth: true; placeholderText: qsTr("Project folder path"); selectByMouse: true; onAccepted: backend.selectProject(text) }
+                      Button { text: qsTr("Use folder"); onClicked: backend.selectProject(manualPath.text) }
+                    }
+                    ColumnLayout { visible: backend.selectedProject.length === 0 && backend.recentProjects.length > 0; Layout.fillWidth: true
+                      Caption { text: qsTr("RECENT PROJECTS") }
+                      Repeater { model: backend.recentProjects
+                        delegate: Button { required property var modelData; text: modelData.name; flat: true; onClicked: backend.selectProject(modelData.path) }
+                      }
+                    }
+                  }
+                }
+                Card { implicitHeight: toolContent.implicitHeight + 36
+                  ColumnLayout { id: toolContent; anchors.fill: parent; anchors.margins: 18; spacing: 10
+                    RowLayout { Layout.fillWidth: true
+                      Caption { text: qsTr("2 / CHECK YOUR CODING TOOLS"); Layout.fillWidth: true }
+                      Button { objectName: "checkToolsButton"; text: backend.tools.checking ? qsTr("Checking…") : qsTr("Check tools"); enabled: !backend.tools.checking; onClicked: backend.tools.check() }
+                    }
+                    Repeater { model: backend.tools.entries; delegate: ToolRow { required property var modelData; entry: modelData } }
+                    Body { text: qsTr("Lore uses the coding tools and accounts already on this computer. Install or sign in above if needed.") }
+                  }
+                }
+                Card { implicitHeight: captureContent.implicitHeight + 36
+                  ColumnLayout { id: captureContent; anchors.fill: parent; anchors.margins: 18; spacing: 8
+                    Caption { text: qsTr("OPTIONAL / CAPTURE & LEARNING") }
+                    Switch { objectName: "captureSwitch"; text: qsTr("Capture automatically while Lore is open"); checked: backend.watching || !backend.connected; enabled: backend.connected; onToggled: backend.watching = checked }
+                    Body { text: qsTr("Capture turns on when you connect. Claude also saves through project hooks when Lore is closed.") }
+                    Switch { objectName: "autoLearningSwitch"; text: qsTr("Update the wiki automatically"); checked: backend.autoLearning; enabled: backend.connected && win.toolReady(backend.learningProvider); onToggled: backend.autoLearning = checked }
+                    Body { visible: !backend.connected; text: qsTr("Connect this project first to enable automatic wiki updates.") }
+                    Body { visible: backend.connected && !win.toolReady(backend.learningProvider); text: qsTr("Sign in to your selected tool above to enable wiki updates.") }
+                    Body { text: qsTr("Automatic wiki updates send new messages to your selected tool after a quiet minute and use its model quota. Leave this off to choose Build wiki yourself.") }
+                    Button { text: qsTr("What will Lore change?"); checkable: true; flat: true; id: changesToggle }
+                    Body { visible: changesToggle.checked; text: qsTr("Lore creates a private .lore archive, adds a BRAIN.md entry point, and connects the project’s AGENTS.md, CLAUDE.md, and local Claude hooks. Existing instructions and other hooks are preserved.") }
+                  }
+                }
+              }
+            }
+            Line {}
+            RowLayout { Layout.fillWidth: true
+              Body { text: backend.connected ? qsTr("This project is connected. You can start a new coding session.") : qsTr("Connect once. Lore will remember this project next time.") }
+              PrimaryButton { objectName: "connectProjectButton"; text: backend.connected ? qsTr("Done") : qsTr("Connect project"); enabled: backend.selectedProject.length > 0 && !backend.busy && !backend.capturing; onClicked: { if (backend.connected || backend.connectProject()) { win.page = 0; win.document = "" } } }
             }
           }
           ColumnLayout {
@@ -227,28 +303,24 @@ ApplicationWindow {
             }
           }
         }
-        Rectangle {
-          Layout.fillWidth: true; implicitHeight: statusText.implicitHeight + 25; color: "#151815"
-          Label { id: statusText; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.margins: 30; text: backend.status || qsTr("Initialize a project to start building its memory."); color: win.muted; font.pixelSize: 11; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight }
+        Rectangle { Layout.fillWidth: true; implicitHeight: statusText.implicitHeight + 22; color: "#151b16"
+          Label { id: statusText; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.margins: 26; text: backend.status || qsTr("Choose a project folder to get started."); color: win.muted; font.pixelSize: 11; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight }
         }
       }
     }
-    Rectangle {
-      visible: win.helpVisible; anchors.fill: parent; color: "#dd101211"
+    Rectangle { visible: win.helpVisible; anchors.fill: parent; color: "#ed101411"
       MouseArea { anchors.fill: parent; onClicked: win.helpVisible = false }
-      Rectangle { anchors.centerIn: parent; width: 470; height: 320; color: "#1c231c"; border.color: win.edge; radius: theme.radius
-        Column { anchors.fill: parent; anchors.margins: 30; spacing: 22
-          Label { text: qsTr("Keyboard shortcuts"); color: win.ink; font.pixelSize: 24 }
-          Label { text: qsTr("Space    Capture now\nCtrl+K   Search memory\nEscape   Close page or help\n?        Show shortcuts\nQ        Quit"); color: win.ink; font.family: "JetBrains Mono"; font.pixelSize: 14; lineHeight: 1.7 }
-          Label { text: qsTr("Lore saves captured records and wiki pages automatically."); color: win.muted; width: parent.width; wrapMode: Text.Wrap }
+      Rectangle { anchors.centerIn: parent; width: Math.min(530, win.width - 60); height: 380; color: "#1c271d"; border.color: win.edge; radius: theme.radius
+        Column { anchors.fill: parent; anchors.margins: 28; spacing: 20
+          Label { text: qsTr("Help & shortcuts"); color: win.ink; font.pixelSize: 24 }
+          Label { text: qsTr("Choose a folder, check your tools, and connect. Use Start Claude Code or Start Codex to begin a session in the right project."); color: win.muted; width: parent.width; wrapMode: Text.Wrap }
+          Label { text: qsTr("Ctrl+O   Choose project folder\nCtrl+K   Search memory\nSpace    Capture now\nF11      Toggle full screen\nEscape   Close page or help\n?        Show this help\nQ        Quit"); color: win.ink; font.family: "monospace"; font.pixelSize: 13; lineHeight: 1.5 }
         }
       }
     }
   }
-  Dialog {
-    id: quitDialog; anchors.centerIn: parent; modal: true; title: qsTr("Cancel learning and quit?")
-    standardButtons: Dialog.Yes | Dialog.No
-    Label { text: qsTr("The current learning pass has not finished. Captured conversations are already saved."); width: 380; wrapMode: Text.Wrap }
+  Dialog { id: quitDialog; anchors.centerIn: parent; modal: true; title: qsTr("Cancel learning and quit?"); standardButtons: Dialog.Yes | Dialog.No
+    Label { text: qsTr("Learning is still running. Captured conversations are already saved."); width: 360; wrapMode: Text.Wrap }
     onAccepted: { backend.cancel(); Qt.quit() }
   }
 }

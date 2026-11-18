@@ -41,9 +41,22 @@ jobs:
         timeout-minutes: 3
         shell: pwsh
         run: .\tests\windows-smoke.ps1
+      - name: Build Windows installer
+        shell: pwsh
+        run: .\bin\installer-windows.ps1
+      - name: Install, launch, and uninstall
+        timeout-minutes: 3
+        shell: pwsh
+        run: .\tests\windows-installer.ps1
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: lore-windows-x64
           path: build/windows/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: lore-windows-installer
+          path: build/installer/*.exe
           if-no-files-found: error
           retention-days: 14

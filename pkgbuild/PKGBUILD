@@ -1,10 +1,10 @@
 pkgname=lore
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Project memory, conversation archive, and wiki for Claude Code and Codex'
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-wayland')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'xdg-desktop-portal')
 makedepends=('gcc' 'make')
 source=()
 sha256sums=()

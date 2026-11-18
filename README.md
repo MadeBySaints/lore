@@ -9,8 +9,30 @@ turns new messages into a wiki with references to the original evidence.
 
 For development on another machine, start with the
 [handoff](docs/handoff.md) and [contributor instructions](AGENTS.md).
-Linux/Omarchy is supported. Native Windows Claude hooks use direct executable
-arguments; Windows build and deployment scripts are included below.
+Linux/Omarchy and Windows builds are available.
+
+## Install on Windows
+
+1. Open the [latest release](https://github.com/MadeBySaints/lore/releases/latest)
+   and download **Lore-Setup-0.2.0.exe**.
+2. Run the installer, then open **Lore** from the Start menu. The installer
+   includes Qt and Microsoft runtime dependencies and installs for your user.
+3. Choose **Choose folder**, select your project, and review **Check tools**.
+   Install, sign in, or locate Claude Code/Codex using the buttons if needed.
+4. Choose **Connect project**. Capture starts automatically. Use **Start Claude
+   Code** or **Start Codex** to begin a new session in the right project folder.
+
+Lore remembers your project and capture preferences next time. Choose **Build
+wiki** to learn from new messages, or enable **Update the wiki automatically**
+under Connections. Automatic learning is off for a new project and uses the
+selected provider's model quota when enabled. Tool checks inspect local sign-in
+state; they do not make model calls.
+
+The installer is an unsigned preview build. Its uninstaller removes the app,
+while project conversation archives and wiki pages remain in their projects.
+
+For the portable build, keep the entire downloaded folder together and open
+**lore-desktop.exe**. No PowerShell command is needed to open the interface.
 
 ## Build and open
 
@@ -22,7 +44,7 @@ and a C++17 compiler. No Node or Python runtime is needed by the app.
 ./build/lore open --project /absolute/path/to/project
 ```
 
-Enter a project folder, choose **Initialize**, then **Connect project**.
+Choose **Choose folder**, select your project, then **Connect project**.
 Connect preserves existing text in AGENTS.md and CLAUDE.md, prepends a managed
 pointer to BRAIN.md, merges lifecycle hooks into .claude/settings.local.json,
 and excludes private memory from Git. Start a new agent session to load the
@@ -47,15 +69,17 @@ Qt 6.8+ MSVC 2022 x64 tools on PATH. Python is needed only for integration tests
 .\bin\test.ps1
 python tests/integration.py
 .\bin\package-windows.ps1
+.\bin\installer-windows.ps1
 
 .\build\windows\lore.exe init --project 'C:\Work\my-project'
 .\build\windows\lore.exe connect --project 'C:\Work\my-project'
 ```
 
-Keep the complete `build/windows` folder together; it contains Qt runtime
-dependencies in addition to lore.exe. The Microsoft Visual C++ runtime must be
-installed on the target machine. Windows CI builds and tests the executable and
-uploads a `lore-windows-x64` artifact with the bundled Qt dependencies.
+Keep the complete `build/windows` folder together; it contains runtime
+dependencies in addition to lore.exe and the console-free lore-desktop.exe
+launcher. `installer-windows.ps1` requires Inno Setup 6 and produces the per-user
+setup program. Windows CI builds, installs, launches, and uninstalls this package,
+checks that project memory survives, and uploads installer and portable artifacts.
 
 Connect writes the same project-local settings used on Linux. Hooks use
 Claude Code's **exec form**: `command` is the absolute lore.exe path and `args`
@@ -76,7 +100,7 @@ installed Windows CLI variants require separate validation on the target machine
    prompts, responses, before compaction, and session end. Prompt hooks search
    the archive and add short, cited evidence to context. Keep **Capture** on in
    the app, or `lore watch` running, to capture Codex JSONL rollouts too.
-2. **Learn.** Choose Codex or Claude, then **Learn**. Pending user and assistant
+2. **Learn.** Choose Codex or Claude, then **Build wiki**. Pending user and assistant
    messages are sent through your authenticated CLI to that provider. The
    response becomes facts, decisions, next steps, and questions with validated
    event references. Model output can be wrong; citations make it auditable.
@@ -85,7 +109,8 @@ installed Windows CLI variants require separate validation on the target machine
 
 **Automatic learning** is optional under Connections. After 60 seconds without
 newly captured records, it sends a batch to the selected provider. It uses that
-provider's quota and resets to off when switching projects. Capture and keyword
+provider's quota. Lore remembers this preference separately for each project;
+new projects start with automatic learning off. Capture and keyword
 search themselves make no model calls. Failed or cancelled learning does not
 mark messages learned, so it can be retried.
 
@@ -124,7 +149,9 @@ that directory are included. No working-directory metadata means no import.
 Changed files are rescanned and individual records deduplicated. Transcript
 revisions are retained as history. A partial final JSON record is retried at
 the next sync; malformed complete records are reported. Sync exits 1 when it
-reports warnings, including unavailable transcript directories. Explicit import
+reports warnings, including unavailable explicitly selected transcript directories.
+Default directories that have not been created yet are treated as waiting for
+the first coding session. Explicit import
 bypasses the unchanged-file scan cache.
 
 ## MCP for either coding tool
@@ -195,6 +222,8 @@ Stop the watcher for Codex. Remove optional MCP registrations with the tool's
 | --- | --- |
 | Space | Capture now |
 | Ctrl+K | Search memory |
+| Ctrl+O | Choose a project folder |
+| F11 | Toggle full screen |
 | Escape | Close document or help |
 | ? | Show shortcuts |
 | Q | Quit; confirm if learning is active |
@@ -211,3 +240,8 @@ Tests use temporary projects and fake provider processes, without network or
 changes to your existing agent settings. The UI follows Omarchy's live accent,
 rounding, and language; English and Danish are included. Translation and theme
 tests use temporary files rather than changing the desktop configuration.
+
+Folder selection uses Windows' native file dialog or the Linux desktop portal.
+GUI preferences and optional tool locations are stored in Lore's local app data
+folder. Provider credentials stay with Claude Code/Codex. Capture runs in a
+background worker so the interface stays usable while conversations are scanned.

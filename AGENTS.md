@@ -11,6 +11,10 @@ remaining platform work. `README.md` describes installation and user workflows.
   optional automatic learning.
 - `src/main.cpp`: application startup, headless commands, hooks, and MCP stdio.
 - `src/Main.qml`: Qt Quick interface. C++ owns file access and process logic.
+- `src/filepicker.*`: native Windows selection and Linux desktop portal dialogs;
+  tests inject a fake picker rather than opening interactive dialogs.
+- `src/toolbox.*`: executable discovery, sign-in checks, and coding-session
+  buttons. Standard npm wrappers use Node directly rather than shell execution.
 - `src/theme.*`, `src/translator.*`, `src/i18n/`: Omarchy appearance and language
   integration, with defaults when Omarchy is absent.
 - `tests/`: Qt unit/UI tests, CLI integration tests, and fictional preview data.
@@ -48,3 +52,11 @@ paths must never be interpolated into a shell command. On Windows use
 `bin/build.ps1`, `bin/test.ps1`, and `python tests/integration.py`. The Windows
 workflow builds and tests native hooks and bundles Qt. Distinguish these checks
 from live authentication and installed Windows provider CLI validation.
+
+Capture workers construct their own Store/SQLite connection inside the worker
+thread; never pass the GUI's database connection across threads. GUI tests must
+use temporary preferences files and transcript roots. Keep automatic learning
+opt-in per project. On Windows, lore-desktop.exe opens the GUI without a console;
+lore.exe remains the headless hook/CLI binary. Build the Inno Setup installer
+with `bin/installer-windows.ps1` after packaging, and validate install, launch,
+and uninstall with `tests/windows-installer.ps1`.

@@ -12,7 +12,9 @@ project = scratch / 'atlas'
 project.mkdir()
 env = dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_QPA_PLATFORMTHEME='generic',
            QT_QUICK_BACKEND='software', QT_FORCE_STDERR_LOGGING='1',
-           LORE_THEME_DIRECTORY=str(scratch / 'theme-fallback'))
+           LORE_THEME_DIRECTORY=str(scratch / 'theme-fallback'),
+           LORE_PREFERENCES_FILE=str(scratch / 'preferences.json'),
+           LORE_SKIP_TOOL_CHECKS='1')
 
 
 def run(*args, **kwargs):
@@ -63,6 +65,7 @@ print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':
 fake.chmod(0o700)
 env['PATH'] = str(tools) + os.pathsep + os.environ['PATH']
 run('learn', '--provider', 'codex')
+run('connect')
 env['PATH'] = os.environ['PATH']
 language = scratch / 'language'
 env['LORE_LANGUAGE_FILE'] = str(language)

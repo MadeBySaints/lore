@@ -14,6 +14,8 @@
 #include <QTemporaryDir>
 #include <QScopeGuard>
 #include <QTextStream>
+#include <QQuickItem>
+#include <QStandardPaths>
 #include <filesystem>
 #include <QtTest>
 
@@ -24,6 +26,13 @@ static QByteArray claude(const QString &root, const QString &role, const QString
 static QJsonObject entry(const QString &ref) {
   return {{"entries",QJsonArray{QJsonObject{{"title","Database choice"},{"kind","decision"},{"body","Use SQLite for local storage."},{"refs",QJsonArray{ref}}}}}};
 }
+class FakePicker : public FilePicker {
+public:
+  bool opened = false;
+  using FilePicker::FilePicker;
+  void choose(bool, const QString &) override { opened = true; }
+  void pick(const QString &path) { emit selected(path); }
+};
 class LoreTests : public QObject {
   Q_OBJECT
 private slots:
@@ -233,15 +242,85 @@ private slots:
     QVERIFY2(finished.first().first().toBool(),qPrintable(backend.status()));
     QCOMPARE(backend.memories().size(),1);
   }
+  void guidedConnectionRemembersTheProjectAndSettings() {
+    QTemporaryDir p, data, logs;
+    const QString preferences = data.filePath("preferences.json");
+    {
+      FakePicker picker;
+      Backend backend(nullptr,&picker,preferences,{logs.path(),logs.path()});
+      backend.chooseProject(); QVERIFY(picker.opened); QVERIFY(backend.selecting());
+      picker.pick(p.path()); QVERIFY(!backend.selecting());
+      QCOMPARE(backend.selectedProject(),QFileInfo(p.path()).canonicalFilePath());
+      QVERIFY(!QFileInfo::exists(p.filePath(".lore")));
+      QVERIFY(backend.connectProject()); QVERIFY(backend.connected()); QVERIFY(backend.watching());
+      QTRY_VERIFY(!backend.capturing());
+      backend.setLearningProvider("claude"); backend.setAutoLearning(true);
+      QVERIFY(backend.autoLearning());
+    }
+    Backend restored(nullptr,nullptr,preferences,{logs.path(),logs.path()});
+    QCOMPARE(restored.project(),QFileInfo(p.path()).canonicalFilePath());
+    QVERIFY(restored.connected()); QVERIFY(restored.watching()); QVERIFY(restored.autoLearning());
+    QCOMPARE(restored.learningProvider(),QString("claude"));
+    QCOMPARE(restored.recentProjects().size(),1);
+    restored.setWatching(false);
+    QVERIFY(!restored.autoLearning());
+  }
+  void toolChecksUseNativeExecutablesAndDoNotCallModels() {
+    QTemporaryDir fake;
+    const QString suffix =
+#ifdef Q_OS_WIN
+      ".exe";
+#else
+      "";
+#endif
+    for (const auto &id : {"claude","codex"}) {
+      const QString executable = fake.filePath(QString(id) + suffix);
+      QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(),executable));
+      QFile::setPermissions(executable,QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    }
+    const auto previous = qgetenv("PATH");
+    const auto restore = qScopeGuard([&] { qputenv("PATH",previous); });
+    qputenv("PATH",fake.path().toUtf8() + QDir::listSeparator().toLatin1() + previous);
+    Toolbox tools; tools.check(); QTRY_VERIFY(!tools.checking());
+    for (const auto &entry : tools.entries()) QCOMPARE(entry.toMap().value("state").toString(),QString("ready"));
+    QVERIFY(!Toolbox::resolve("claude",fake.filePath("missing")).available());
+  }
+  void windowsNpmWrapperUsesNodeWithoutAShell() {
+#ifdef Q_OS_WIN
+    if (QStandardPaths::findExecutable("node.exe").isEmpty()) QSKIP("Node is not installed");
+    QTemporaryDir fake;
+    const QString wrapper = fake.filePath("Claude's tools/claude.cmd");
+    const QString script = fake.filePath("Claude's tools/node_modules/@anthropic-ai/claude-code/cli.js");
+    Store::write(wrapper,"@echo Never run this wrapper\r\nexit /b 99\r\n");
+    Store::write(script,"console.log(JSON.stringify({loggedIn:true}))\n");
+    const auto command = Toolbox::resolve("claude",wrapper);
+    QVERIFY(command.available()); QCOMPARE(command.arguments,QStringList{script});
+    QProcess process; process.start(command.program,command.arguments + QStringList{"auth","status","--json"});
+    QVERIFY(process.waitForFinished(5000)); QCOMPARE(process.exitCode(),0);
+    QVERIFY(QJsonDocument::fromJson(process.readAllStandardOutput()).object().value("loggedIn").toBool());
+#endif
+  }
   void realQmlLoadsAndKeyboardSearchWorks() {
-    QTemporaryDir p; Backend backend; QVERIFY(backend.openProject(p.path(),true));
+    QTemporaryDir p, logs; FakePicker picker;
+    Backend backend(nullptr,&picker,{}, {logs.path(),logs.path()});
     Theme theme(p.path()); Translator translator(p.filePath("language"));
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend",&backend); engine.rootContext()->setContextProperty("theme",&theme);
     engine.rootContext()->setContextProperty("translator",&translator); engine.rootContext()->setContextProperty("initialProject",p.path());
     engine.load(QUrl("qrc:/Main.qml")); QVERIFY(!engine.rootObjects().isEmpty());
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first()); QVERIFY(window);
-    window->show(); QTest::qWait(200); QTest::keyClick(window,Qt::Key_K,Qt::ControlModifier);
+    window->show(); QTest::qWait(200);
+    auto click = [&](const QString &name) {
+      auto *item = window->findChild<QQuickItem *>(name);
+      if (!item) return false;
+      const QPoint point = item->mapToScene(QPointF(item->width()/2,item->height()/2)).toPoint();
+      QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,point); return true;
+    };
+    QVERIFY(click("chooseProjectButton")); QVERIFY(picker.opened);
+    picker.pick(p.path()); QTest::qWait(50);
+    QVERIFY(click("connectProjectButton")); QTRY_VERIFY(backend.connected()); QTRY_VERIFY(!backend.capturing());
+    QVERIFY(backend.watching());
+    QTest::keyClick(window,Qt::Key_K,Qt::ControlModifier);
     QCOMPARE(window->property("page").toInt(),3);
     for (const auto key : {Qt::Key_S,Qt::Key_Q,Qt::Key_L}) QTest::keyClick(window,key);
     QTest::keyClick(window,Qt::Key_Escape); QVERIFY(!window->property("helpVisible").toBool());
@@ -255,11 +334,14 @@ int main(int argc, char **argv) {
     // where QProcess cannot execute a Unix shebang or a .cmd shim directly.
     QCoreApplication app(argc,argv);
     QTextStream input(stdin), output(stdout);
+    const auto args = app.arguments();
+    if ((provider == "claude" && args.contains("auth") && args.contains("status")) || (provider == "codex" && args.contains("login") && args.contains("status"))) {
+      output << "{\"loggedIn\":true}\n"; return 0;
+    }
     const QString prompt = input.readAll(), marker = "NEW EVENTS:\n";
     const int start = prompt.lastIndexOf(marker);
     const auto events = QJsonDocument::fromJson(prompt.mid(start + marker.size()).toUtf8()).array();
     if (start < 0 || events.isEmpty()) return 1;
-    const auto args = app.arguments();
     if (provider == "codex" && (!args.contains("--ephemeral") || !args.contains("--sandbox"))) return 1;
     if (provider == "claude" && (!args.contains("--no-session-persistence") || !args.contains("--strict-mcp-config"))) return 1;
     const QString ref = qEnvironmentVariableIsSet("LORE_TEST_INVALID_REFS") ? "invented" : events.first().toObject().value("id").toString();

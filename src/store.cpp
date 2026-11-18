@@ -170,7 +170,10 @@ QJsonObject Store::sync(const QString &codexRoot, const QString &claudeRoot) {
   const QString claude = claudeRoot.isEmpty() ? qEnvironmentVariable("CLAUDE_CONFIG_DIR", QDir::homePath() + "/.claude") + "/projects" : claudeRoot;
   QJsonArray warnings; int added = 0, files = 0;
   for (const auto &entry : QList<QPair<QString, QString>>{{codex, "codex"}, {claude, "claude"}}) {
-    if (!QFileInfo::exists(entry.first)) { warnings.append("Transcript directory missing: " + entry.first); continue; }
+    if (!QFileInfo::exists(entry.first)) {
+      if ((entry.second == "codex" && !codexRoot.isEmpty()) || (entry.second == "claude" && !claudeRoot.isEmpty())) warnings.append("Transcript directory missing: " + entry.first);
+      continue;
+    }
     QDirIterator it(entry.first, {"*.jsonl"}, QDir::Files, QDirIterator::Subdirectories);
     while (it.hasNext()) {
       const QString path = it.next();

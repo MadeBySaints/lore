@@ -30,7 +30,7 @@ official integration documentation.
 ## Validation completed
 
 - Linux build succeeded with Qt 6.12, qmake6, and GCC 16.
-- Qt test runner: 18 passed, including setup/cleanup and real QML interaction.
+- Qt test runner: 21 passed, including setup/cleanup and real QML interaction.
 - Python CLI integration suite: 7 tests passed.
 - Live learning passes through codex-cli 0.170.0 and Claude Code 2.1.326 both
   created cited memory using fictional project text.
@@ -77,10 +77,32 @@ explicitly includes qoffscreen.dll, which headless commands need in addition to
 the GUI platform plugin selected automatically by windeployqt.
 
 Live authentication and actual Windows Claude/Codex CLI distributions still
-require validation on a Windows machine. In particular, learning must account
-for `.cmd`/`.bat` shims if the provider is installed through npm; QProcess cannot
-launch those as native executables. Windows archives inherit directory ACLs;
-Unix owner-only permission bits do not configure Windows ACLs.
+require validation on a Windows machine. Standard npm wrappers now resolve to
+their known JavaScript entry points and are launched with Node directly; they
+are never passed to a shell. A Windows regression test covers this resolution.
+Windows archives inherit directory ACLs; Unix owner-only permission bits do not
+configure Windows ACLs.
+
+## Guided desktop setup and installation
+
+Version 0.2.0 adds a per-user Windows installer, Start menu shortcut, and a small
+native lore-desktop.exe launcher that starts the core app without a console.
+The package includes Qt, the offscreen plugin, and app-local Microsoft runtime
+DLLs. Inno Setup builds the installer; Windows CI installs it into a path with
+spaces/apostrophes, renders the installed welcome screen, checks the shortcut,
+and verifies that uninstall leaves project memory intact.
+
+The main interface uses Choose folder, tool detection/sign-in actions, and one
+Connect project button. Capture starts on connection, runs in a worker thread,
+and the app remembers recent projects and per-project capture/learning choices.
+Learning remains opt-in and its quota use is explained in the interface. A
+live local sign-in check is required before the GUI enables wiki generation.
+Start Claude Code / Start Codex buttons open a terminal in the project folder.
+
+Windows folder selection uses IFileDialog; Linux uses the desktop portal. Tests
+inject FilePicker and temporary preferences/scan roots to exercise the real QML
+button flow without touching user settings or opening modal file dialogs.
+Credentials remain owned by the provider CLIs, not Lore.
 
 WSL2 is a possible interim route, but has not been tested. Lore and the coding
 agents should share the same Linux environment for that workflow.

@@ -13,3 +13,14 @@ try {
 } finally {
   Pop-Location
 }
+$launcher = Join-Path $build 'launcher'
+New-Item -ItemType Directory -Force -Path $launcher | Out-Null
+Push-Location $launcher
+try {
+  & qmake (Join-Path $root 'windowslauncher.pro')
+  if ($LASTEXITCODE -ne 0) { throw 'Launcher qmake failed' }
+  & $Make
+  if ($LASTEXITCODE -ne 0) { throw 'Desktop launcher build failed' }
+} finally {
+  Pop-Location
+}
