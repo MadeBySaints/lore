@@ -305,6 +305,13 @@ private slots:
     const auto brief=store.briefing("UpdatedSessionManager",8,false); QVERIFY(!brief.value("evidence").toArray().isEmpty());
     QVERIFY(Store::read(p.filePath(brief.value("evidence").toArray().first().toObject().value("url").toString())).contains("UpdatedSessionManager"));
   }
+  void longArchivesKeepRecentCorrectionsInLearningContext() {
+    QTemporaryDir p,logs; Store store(p.path(),true); Store::write(logs.filePath("s.jsonl"),claude(p.path(),"user","A documented storage decision")); store.ingest(logs.filePath("s.jsonl"),"claude");
+    const auto batch=store.learningBatch().value("events").toArray(); QJsonArray entries;
+    for(int i=0;i<12;++i) { auto item=entry(batch.first().toObject().value("id").toString()).value("entries").toArray().first().toObject(); item["title"]="Historical topic "+QString::number(i); item["body"]=QString(4000,'x'); entries.append(item); }
+    store.learn(QJsonObject{{"entries",entries}},batch,"fake"); store.reviewMemory(12,"corrected","LATEST_USER_CORRECTION: use local sessions.");
+    const auto prompt=store.learningBatch().value("prompt").toString(); QVERIFY(prompt.contains("LATEST_USER_CORRECTION")); QVERIFY(prompt.size()<35000);
+  }
   void correctionsConflictsAndForgetControlRecall() {
     QTemporaryDir p,logs; Store store(p.path(),true); const QString path=logs.filePath("s.jsonl");
     Store::write(path,claude(p.path(),"user","Use SQLite for the database.")); store.ingest(path,"claude"); auto batch=store.learningBatch().value("events").toArray();

@@ -30,7 +30,7 @@ official integration documentation.
 ## Validation completed
 
 - Linux build succeeded with Qt 6.12, qmake6, and GCC 16.
-- Qt test runner: 28 passed, including setup/cleanup and real QML interaction.
+- Qt test runner: 29 passed, including setup/cleanup and real QML interaction.
 - Python CLI integration suite: 9 tests passed.
 - Live learning passes through codex-cli 0.170.0 and Claude Code 2.1.326 both
   created cited memory using fictional project text.
