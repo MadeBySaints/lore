@@ -156,6 +156,12 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(delivery['session'], 'fixture')
         self.assertEqual(delivery['text'], response['hookSpecificOutput']['additionalContext'])
 
+    def test_ask_rejects_invalid_input_without_waiting_for_a_provider(self):
+        for arguments in [('ask',), ('ask', '--query', 'question', '--provider', 'invalid')]:
+            result = self.run_cli(*arguments, success=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(result.stderr.strip())
+
     def test_mcp_responds_before_stdin_closes(self):
         self.capture()
         process = subprocess.Popen([str(BINARY), 'mcp', '--project', str(self.project)],

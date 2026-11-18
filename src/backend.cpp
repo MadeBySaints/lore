@@ -98,7 +98,7 @@ Backend::Backend(QObject *parent, FilePicker *picker, const QString &preferences
       } else if(m_workKind=="preview") { m_preview=result.toVariantMap(); emit changed(); message(tr("Context preview ready. This preview has not been sent to an agent.")); }
       else if(m_workKind=="retrieve") { m_results=result.value("evidence").toArray().toVariantList(); emit resultsChanged(); message(tr("Evidence search complete: %1").arg(result.value("retrieval").toString())); if(m_query!=result.value("query").toString()) QTimer::singleShot(0,this,[this] { search(m_query); }); }
       else message(tr("Project intelligence updated."));
-    } catch(const std::exception &e) { message(QString::fromUtf8(e.what()),true); }
+    } catch(const std::exception &e) { message(QString::fromUtf8(e.what()),true); if(m_workKind=="ask") emit learningFinished(false); }
     emit statusChanged();
   });
   m_notificationExpiry.setSingleShot(true);

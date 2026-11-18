@@ -122,6 +122,8 @@ int main(int argc, char **argv) {
     else if(command=="review") { store.reviewMemory(parser.value("id").toInt(),parser.value("action"),parser.value("text")); output(QJsonObject{{"ok",true}}); }
     else if(command=="semantic") { const QString action=parser.value("action"); if(action=="download") { store.downloadSemanticModel(); output(store.buildSemanticIndex()); } else if(action=="index") output(store.buildSemanticIndex()); else if(action=="off") { store.setSemanticEnabled(false); output(store.semanticStatus()); } else output(store.semanticStatus()); }
     else if(command=="ask") {
+      if(parser.value("query").trimmed().isEmpty() || parser.value("query").size()>4000) throw std::runtime_error("Ask a question between 1 and 4,000 characters using --query.");
+      if(!QStringList{"claude","codex"}.contains(parser.value("provider"))) throw std::runtime_error("Choose --provider claude or codex.");
       if(parser.isSet("dry-run")) { output(store.answerPrompt(parser.value("query"))); return 0; }
       Backend backend; backend.openProject(store.root()); backend.setLearningProvider(parser.value("provider"));
       QEventLoop loop; bool ok=false;
