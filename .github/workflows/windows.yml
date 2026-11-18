@@ -49,6 +49,13 @@ jobs:
         shell: pwsh
         run: .\tests\windows-installer.ps1
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        if: always()
+        with:
+          name: lore-windows-install-check
+          path: build/install-check/
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: lore-windows-x64
           path: build/windows/
