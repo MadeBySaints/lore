@@ -1,0 +1,13 @@
+<RCC><qresource prefix="/">
+  <file alias="Main.qml">Main.qml</file>
+  <file>Caption.qml</file><file>Body.qml</file><file>Line.qml</file><file>Card.qml</file><file>Stat.qml</file><file>PrimaryButton.qml</file><file>NavItem.qml</file><file>ToolRow.qml</file>
+  <file>HomePage.qml</file><file>WikiPage.qml</file><file>AskSearchPage.qml</file><file>SourcesPage.qml</file><file>SetupWizard.qml</file>
+  <file>ModelOutputPage.qml</file><file>FunctionIndexPage.qml</file><file>FunctionWikiPage.qml</file><file>TranscriptAnalysisPage.qml</file><file>KnowledgeModelOptions.qml</file>
+  <file>ModelOptions.qml</file><file>ModelSelector.qml</file><file>SkillsPage.qml</file><file>Timestamp.js</file><file>PersonalWikiSettings.qml</file>
+  <file>ProjectPage.qml</file><file>MemoryCard.qml</file><file>SettingsPage.qml</file><file>ProjectsPage.qml</file><file>PromptPresetBox.qml</file><file>prompt-presets.json</file><file>quick-commands.json</file>
+  <file>icons/home.svg</file><file>icons/output.svg</file><file>icons/wiki.svg</file><file>icons/ask.svg</file><file>icons/sources.svg</file><file>icons/settings.svg</file><file>icons/projects.svg</file><file>icons/help.svg</file><file>icons/check.svg</file><file>icons/setup.svg</file>
+  <file alias="i18n/da.json">i18n/da.json</file>
+  <file alias="agent-skill.md">agent-skill.md</file>
+  <file>python-declarations.py</file>
+  <file alias="lore.svg">../pkgbuild/lore.svg</file>
+</qresource></RCC>

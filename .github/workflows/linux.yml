@@ -1,0 +1,35 @@
+name: Linux build and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
+        with:
+          version: '6.8.3'
+          arch: linux_gcc_64
+          cache: true
+      - name: Set up build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1 libxkbcommon0
+          mkdir -p "$RUNNER_TEMP/lore-tools"
+          ln -s "$(command -v qmake)" "$RUNNER_TEMP/lore-tools/qmake6"
+          echo "$RUNNER_TEMP/lore-tools" >> "$GITHUB_PATH"
+      - run: ./bin/build
+      - run: ./bin/test
+      - run: python3 tests/integration.py
+      - run: python3 tests/evaluate_retrieval.py

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Lore
+Name[da]=Lore
+Comment=Project memory for Claude Code and Codex
+Comment[da]=Projekthukommelse til Claude Code og Codex
+Exec=lore open
+Icon=lore
+Terminal=false
+Categories=Development;
+StartupWMClass=lore

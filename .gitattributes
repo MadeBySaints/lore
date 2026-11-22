@@ -1,0 +1,2 @@
+# Keep the bundled upstream skill files in their original LF format.
+src/skill-catalog/** text eol=lf

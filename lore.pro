@@ -1,0 +1,17 @@
+QT += core gui qml quick quickcontrols2 sql concurrent network
+linux: QT += dbus
+win32: LIBS += -lole32 -lshell32 -luuid -ladvapi32
+CONFIG += c++17 release
+CONFIG -= debug_and_release
+win32-msvc*: QMAKE_CXXFLAGS += /utf-8
+win32: CONFIG += console
+TARGET = lore
+TEMPLATE = app
+HEADERS += src/store.h src/backend.h src/memorymodel.h src/theme.h src/translator.h src/paths.h src/filepicker.h src/toolbox.h src/storeutil.h
+SOURCES += src/main.cpp src/store.cpp src/intelligence.cpp src/backend.cpp src/memorymodel.cpp src/theme.cpp src/translator.cpp src/filepicker.cpp src/toolbox.cpp
+win32: RC_ICONS = pkgbuild/lore.ico
+SOURCES += src/skills.cpp
+RESOURCES += src/resources.qrc src/skills.qrc
+SOURCES += src/knowledge.cpp src/knowledgejobs.cpp
+HEADERS += src/mcp.h
+SOURCES += src/mcp.cpp

@@ -1,0 +1,18 @@
+[
+  {"id": "q-next", "name": "Work on the next step",
+   "text": "Read BRAIN.md and the wiki's next steps. Tell me which open next step matters most and why, wait for my go-ahead, then do it."},
+  {"id": "q-recap", "name": "Where did we leave off?",
+   "text": "Read BRAIN.md and use `lore search` to recap where this project stands: what changed recently, what is decided, what is open, and what you would do next. Do not change any files."},
+  {"id": "q-stale", "name": "Check stale memory",
+   "text": "Run `lore status --project <working directory from BRAIN.md> --json` and read the wiki entries that need checking or conflict. Check each against the current code and tell me which are outdated, which still hold, and what a correction should say. Do not change any files."},
+  {"id": "q-tests", "name": "Test recent changes",
+   "text": "Look at the most recent changes in this repository, find the ones without tests, and write focused tests for them. Run the test suite and fix anything you broke."},
+  {"id": "q-fix", "name": "Fix failing tests",
+   "text": "Run the project's test suite. For each failure, find the root cause, fix it, and run the suite again until it passes. Explain each fix briefly."},
+  {"id": "q-review", "name": "Review uncommitted work",
+   "text": "Review the uncommitted changes in this repository for bugs, missing tests, and unclear code. List findings by severity with file and line, and suggest fixes. Do not change any files."},
+  {"id": "q-release", "name": "Audit for release",
+   "text": "Audit this repository for a public release: secrets or personal data in files and history, out-of-date documentation, failing or missing tests, debug leftovers, and license issues. Report what you find before changing anything."},
+  {"id": "q-explain", "name": "Explain the codebase",
+   "text": "Give me a guided tour of this codebase: what it does, how it is laid out, the main data flow, and where to start for common changes. Use BRAIN.md and the wiki for history. Do not change any files."}
+]
